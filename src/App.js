@@ -1,23 +1,34 @@
-import logo from './logo.svg';
+import React, { useState } from 'react';
 import './App.css';
+import Header from './Header';
+import Home from './Home';
+import About from './About';
+import Impact from './Impact';
+import Contact from './Contact';
+import Login from './Login';
+import SignUp from './SignUp';
 
 function App() {
+  const [activeTab, setActiveTab] = useState('home');
+
+  const handleNavigate = (action) => {
+    if (['home', 'about', 'impact', 'contact', 'login', 'signup'].includes(action)) {
+      setActiveTab(action);
+    } else {
+      // Future navigation logic for other pages
+      console.log(`Navigating to ${action}`);
+    }
+  };
+
   return (
     <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
+      <Header onNavigate={handleNavigate} />
+      {activeTab === 'home' && <Home />}
+      {activeTab === 'about' && <About />}
+      {activeTab === 'impact' && <Impact />}
+      {activeTab === 'contact' && <Contact />}
+      {activeTab === 'login' && <Login onSwitch={() => setActiveTab('signup')} />}
+      {activeTab === 'signup' && <SignUp onSwitch={() => setActiveTab('login')} />}
     </div>
   );
 }
