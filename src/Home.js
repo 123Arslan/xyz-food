@@ -1,11 +1,15 @@
 import React, { useState } from 'react';
 import './Home.css';
 
-const Home = () => {
+const Home = ({ onNavigate }) => {
   const [role, setRole] = useState('Donor');
 
   const handleActionClick = () => {
-    console.log(`Action clicked: START ${role === 'Donor' ? 'DONATING' : 'RECEIVING'}`);
+    if (role === 'Donor') {
+      onNavigate('donor_dashboard');
+    } else {
+      onNavigate('receiver_dashboard');
+    }
   };
 
   return (

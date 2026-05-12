@@ -31,10 +31,11 @@ const Header = ({ onNavigate }) => {
           <ul className="nav-links">
             <li><a href="#home" onClick={(e) => handleNavigation('home', e)}>Home</a></li>
             <li><a href="#about" onClick={(e) => handleNavigation('about', e)}>About</a></li>
-            <li><a href="#donor" onClick={(e) => handleNavigation('donor', e)}>Donor</a></li>
-            <li><a href="#request" onClick={(e) => handleNavigation('request', e)}>Request</a></li>
+            <li><a href="#donor" onClick={(e) => handleNavigation('donor_dashboard', e)}>Donor</a></li>
+            <li><a href="#request" onClick={(e) => handleNavigation('receiver_dashboard', e)}>Request</a></li>
             <li><a href="#impact" onClick={(e) => handleNavigation('impact', e)}>Our Impact</a></li>
             <li><a href="#contact" onClick={(e) => handleNavigation('contact', e)}>Contact Us</a></li>
+            <li><a href="#admin" onClick={(e) => handleNavigation('admin', e)}>Admin Dashboard</a></li>
           </ul>
 
           <div className="nav-buttons">

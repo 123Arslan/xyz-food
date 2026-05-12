@@ -7,7 +7,7 @@ const About = () => {
       {/* Hero Section */}
       <div className="about-hero-section">
         <div className="about-container">
-          <h1 className="about-title">About FoodRescue</h1>
+          <h1 className="about-title">About Donation</h1>
           <p className="about-description">
             We're on a mission to eliminate food waste by creating a seamless connection between food donors and those who need it most.
           </p>
@@ -136,7 +136,7 @@ const About = () => {
               <h2>FOOD DONATION</h2>
               <p>Making a difference in communities by rescuing surplus food and feeding those in need.</p>
             </div>
-            
+
             <div className="footer-col">
               <h3>Quick Links</h3>
               <ul>
@@ -146,7 +146,7 @@ const About = () => {
                 <li><a href="#">Contact Us</a></li>
               </ul>
             </div>
-            
+
             <div className="footer-col">
               <h3>Support</h3>
               <ul>
@@ -156,7 +156,7 @@ const About = () => {
                 <li><a href="#">Terms of Service</a></li>
               </ul>
             </div>
-            
+
             <div className="footer-col contact-col">
               <h3>Contact Us</h3>
               <ul>
@@ -166,7 +166,7 @@ const About = () => {
               </ul>
             </div>
           </div>
-          
+
           <div className="footer-bottom">
             <p>&copy; 2026 Food Donation Platform. All rights reserved.</p>
           </div>
