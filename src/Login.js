@@ -1,15 +1,59 @@
 import React, { useState } from 'react';
+import axios from 'axios';
 import './Login.css';
 
-const Login = ({ onSwitch }) => {
+const Login = ({ onSwitch, onNavigate }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    console.log("Email:", email);
-    console.log("Password:", password);
+    setError('');
+    setLoading(true);
+
+    try {
+      const response = await axios.post('http://localhost:8000/api/login/', {
+        email,
+        password,
+      });
+
+      const data = response.data;
+
+      // Store token and user data depending on rememberMe setting
+      const storage = rememberMe ? localStorage : sessionStorage;
+      storage.setItem('authToken', data.token);
+      storage.setItem('userData', JSON.stringify(data.user));
+
+      setLoading(false);
+      alert("Login successful!");
+
+      // Redirect to correct dashboard or home page
+      if (onNavigate) {
+        const accountType = data.user.profile?.account_type?.toLowerCase();
+        if (accountType === 'donor') {
+          onNavigate('donor_dashboard');
+        } else if (accountType === 'receiver') {
+          onNavigate('receiver_dashboard');
+        } else if (accountType === 'admin') {
+          onNavigate('admin');
+        } else {
+          onNavigate('home');
+        }
+      } else {
+        // Fallback redirection to dashboard or home page
+        window.location.href = '/';
+      }
+    } catch (err) {
+      setLoading(false);
+      if (err.response && err.response.data) {
+        setError(err.response.data.error || 'Invalid credentials or login failed.');
+      } else {
+        setError('A network error occurred. Please check if the Django backend is running at http://localhost:8000.');
+      }
+    }
   };
 
   const handleForgetPassword = (e) => {
@@ -37,6 +81,21 @@ const Login = ({ onSwitch }) => {
           <button className="tab active">Login</button>
           <button className="tab" onClick={handleSignUpClick}>Sign Up</button>
         </div>
+
+        {error && (
+          <div className="error-message" style={{
+            color: '#dc3545',
+            backgroundColor: '#f8d7da',
+            border: '1px solid #f5c6cb',
+            padding: '10px',
+            borderRadius: '4px',
+            marginBottom: '15px',
+            textAlign: 'center',
+            fontSize: '14px'
+          }}>
+            {error}
+          </div>
+        )}
 
         <form onSubmit={handleLogin} className="login-form">
           <div className="input-group">
@@ -71,7 +130,9 @@ const Login = ({ onSwitch }) => {
             <a href="/" onClick={handleForgetPassword} className="forgot-password">Forget password?</a>
           </div>
 
-          <button type="submit" className="login-button">Login</button>
+          <button type="submit" className="login-button" disabled={loading}>
+            {loading ? 'Logging in...' : 'Login'}
+          </button>
         </form>
 
         <div className="divider">

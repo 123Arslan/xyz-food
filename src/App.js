@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './App.css';
 import Header from './Header';
 import Home from './Home';
@@ -13,6 +13,26 @@ import ReceiverDashboard from './ReceiverDashboard';
 
 function App() {
   const [activeTab, setActiveTab] = useState('home');
+
+  useEffect(() => {
+    const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+    const userStr = localStorage.getItem('userData') || sessionStorage.getItem('userData');
+    if (token && userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        const accountType = user.profile?.account_type?.toLowerCase();
+        if (accountType === 'donor') {
+          setActiveTab('donor_dashboard');
+        } else if (accountType === 'receiver') {
+          setActiveTab('receiver_dashboard');
+        } else if (accountType === 'admin') {
+          setActiveTab('admin');
+        }
+      } catch (e) {
+        console.error("Error restoring auth session:", e);
+      }
+    }
+  }, []);
 
   const handleNavigate = (action) => {
     if (['home', 'about', 'impact', 'contact', 'admin', 'donor_dashboard', 'receiver_dashboard', 'login', 'signup'].includes(action)) {
@@ -33,8 +53,8 @@ function App() {
       {activeTab === 'admin' && <AdminDashboard />}
       {activeTab === 'donor_dashboard' && <DonorDashboard />}
       {activeTab === 'receiver_dashboard' && <ReceiverDashboard />}
-      {activeTab === 'login' && <Login onSwitch={() => setActiveTab('signup')} />}
-      {activeTab === 'signup' && <SignUp onSwitch={() => setActiveTab('login')} />}
+      {activeTab === 'login' && <Login onSwitch={() => setActiveTab('signup')} onNavigate={handleNavigate} />}
+      {activeTab === 'signup' && <SignUp onSwitch={() => setActiveTab('login')} onNavigate={handleNavigate} />}
     </div>
   );
 }

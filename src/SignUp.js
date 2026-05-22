@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
+import axios from 'axios';
 import './SignUp.css';
 
-const SignUp = ({ onSwitch }) => {
+const SignUp = ({ onSwitch, onNavigate }) => {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [accountType, setAccountType] = useState('Donor');
   const [agreeTerms, setAgreeTerms] = useState(false);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleLoginClick = () => {
     if (onSwitch) onSwitch();
@@ -19,29 +22,56 @@ const SignUp = ({ onSwitch }) => {
   };
 
   const handleGoogleSignUp = () => {
-    alert("Google signup coming soon");
+    window.location.href = "http://localhost:8000/accounts/google/login/";
   };
 
-  const handleSignUp = (e) => {
+  const handleSignUp = async (e) => {
     e.preventDefault();
+    setError('');
 
     // Basic validation
     if (password !== confirmPassword) {
-      alert("Passwords do not match!");
+      setError("Passwords do not match!");
       return;
     }
 
     if (!agreeTerms) {
-      alert("Please agree to the Terms & Conditions");
+      setError("Please agree to the Terms & Conditions");
       return;
     }
 
-    // Here you would typically make an API call to register the user
-    console.log("Signing up with:", { fullName, email, password, accountType });
-    alert("Sign up successful! Please login.");
+    setLoading(true);
 
-    // Switch to login after successful signup
-    if (onSwitch) onSwitch();
+    try {
+      const response = await axios.post('http://localhost:8000/api/signup/', {
+        fullName,
+        email,
+        password,
+        accountType,
+      });
+
+      alert("Sign up successful! Please login.");
+      setLoading(false);
+
+      // Switch to login after successful signup
+      if (onSwitch) onSwitch();
+    } catch (err) {
+      setLoading(false);
+      if (err.response && err.response.data) {
+        // Parse Django serializer errors
+        let errorMsg = 'Registration failed.';
+        if (typeof err.response.data === 'object') {
+          errorMsg = Object.entries(err.response.data)
+            .map(([key, val]) => `${key}: ${Array.isArray(val) ? val.join(' ') : val}`)
+            .join(' | ');
+        } else {
+          errorMsg = String(err.response.data);
+        }
+        setError(errorMsg);
+      } else {
+        setError('A network error occurred. Please check if the Django backend is running at http://localhost:8000.');
+      }
+    }
   };
 
   return (
@@ -56,6 +86,21 @@ const SignUp = ({ onSwitch }) => {
           <button className="tab" onClick={handleLoginClick}>Login</button>
           <button className="tab active">Sign Up</button>
         </div>
+
+        {error && (
+          <div className="error-message" style={{
+            color: '#dc3545',
+            backgroundColor: '#f8d7da',
+            border: '1px solid #f5c6cb',
+            padding: '10px',
+            borderRadius: '4px',
+            marginBottom: '15px',
+            textAlign: 'center',
+            fontSize: '14px'
+          }}>
+            {error}
+          </div>
+        )}
 
         <form onSubmit={handleSignUp} className="signup-form">
           <div className="input-group">
@@ -123,7 +168,9 @@ const SignUp = ({ onSwitch }) => {
             </label>
           </div>
 
-          <button type="submit" className="signup-button">Sign Up</button>
+          <button type="submit" className="signup-button" disabled={loading}>
+            {loading ? 'Registering...' : 'Sign Up'}
+          </button>
         </form>
 
         <div className="divider">
