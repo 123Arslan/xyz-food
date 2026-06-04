@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import './App.css';
 import Header from './Header';
 import Home from './Home';
@@ -10,52 +11,70 @@ import DonorDashboard from './DonorDashboard';
 import Login from './Login';
 import SignUp from './SignUp';
 import ReceiverDashboard from './ReceiverDashboard';
+import { AuthProvider } from './AuthContext';
+import ProtectedRoute from './ProtectedRoute';
 
-function App() {
-  const [activeTab, setActiveTab] = useState('home');
-
-  useEffect(() => {
-    const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
-    const userStr = localStorage.getItem('userData') || sessionStorage.getItem('userData');
-    if (token && userStr) {
-      try {
-        const user = JSON.parse(userStr);
-        const accountType = user.profile?.account_type?.toLowerCase();
-        if (accountType === 'donor') {
-          setActiveTab('donor_dashboard');
-        } else if (accountType === 'receiver') {
-          setActiveTab('receiver_dashboard');
-        } else if (accountType === 'admin') {
-          setActiveTab('admin');
-        }
-      } catch (e) {
-        console.error("Error restoring auth session:", e);
-      }
-    }
-  }, []);
-
-  const handleNavigate = (action) => {
-    if (['home', 'about', 'impact', 'contact', 'admin', 'donor_dashboard', 'receiver_dashboard', 'login', 'signup'].includes(action)) {
-      setActiveTab(action);
-    } else {
-      // Future navigation logic for other pages
-      console.log(`Navigating to ${action}`);
-    }
-  };
+const AppContent = () => {
+  const location = useLocation();
+  
+  // Conditionally hide public header on the Admin Dashboard page
+  const showHeader = location.pathname !== '/admin';
 
   return (
-    <div className="App">
-      {activeTab !== 'admin' && <Header onNavigate={handleNavigate} />}
-      {activeTab === 'home' && <Home onNavigate={handleNavigate} />}
-      {activeTab === 'about' && <About />}
-      {activeTab === 'impact' && <Impact />}
-      {activeTab === 'contact' && <Contact />}
-      {activeTab === 'admin' && <AdminDashboard />}
-      {activeTab === 'donor_dashboard' && <DonorDashboard />}
-      {activeTab === 'receiver_dashboard' && <ReceiverDashboard />}
-      {activeTab === 'login' && <Login onSwitch={() => setActiveTab('signup')} onNavigate={handleNavigate} />}
-      {activeTab === 'signup' && <SignUp onSwitch={() => setActiveTab('login')} onNavigate={handleNavigate} />}
+    <div className="App w-full min-h-screen overflow-x-hidden">
+      {showHeader && <Header />}
+      
+      <Routes>
+        {/* Public Routes */}
+        <Route path="/" element={<Home />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/impact" element={<Impact />} />
+        <Route path="/contact" element={<Contact />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/signup" element={<SignUp />} />
+        
+        {/* Protected Dashboard Routes */}
+        <Route 
+          path="/donor-dashboard" 
+          element={
+            <ProtectedRoute allowedRole="donor">
+              <DonorDashboard />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/receiver-dashboard" 
+          element={
+            <ProtectedRoute allowedRole="receiver">
+              <ReceiverDashboard />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/admin" 
+          element={
+            <ProtectedRoute allowedRole="admin">
+              <AdminDashboard />
+            </ProtectedRoute>
+          } 
+        />
+        
+        {/* Fallback Catch-All Route */}
+        <Route path="*" element={<Home />} />
+      </Routes>
     </div>
+  );
+};
+
+function App() {
+  return (
+    <AuthProvider>
+      <Router>
+        <div className="w-full min-h-screen overflow-x-hidden">
+          <AppContent />
+        </div>
+      </Router>
+    </AuthProvider>
   );
 }
 

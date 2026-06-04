@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 import './SignUp.css';
 
-const SignUp = ({ onSwitch, onNavigate }) => {
+const SignUp = () => {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -12,8 +13,10 @@ const SignUp = ({ onSwitch, onNavigate }) => {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const navigate = useNavigate();
+
   const handleLoginClick = () => {
-    if (onSwitch) onSwitch();
+    navigate('/login');
   };
 
   const handleTermsClick = (e) => {
@@ -43,7 +46,7 @@ const SignUp = ({ onSwitch, onNavigate }) => {
     setLoading(true);
 
     try {
-      const response = await axios.post('http://localhost:8000/api/signup/', {
+      await axios.post('http://localhost:8000/api/signup/', {
         fullName,
         email,
         password,
@@ -53,8 +56,8 @@ const SignUp = ({ onSwitch, onNavigate }) => {
       alert("Sign up successful! Please login.");
       setLoading(false);
 
-      // Switch to login after successful signup
-      if (onSwitch) onSwitch();
+      // Navigate to login after successful signup
+      navigate('/login');
     } catch (err) {
       setLoading(false);
       if (err.response && err.response.data) {
@@ -150,7 +153,7 @@ const SignUp = ({ onSwitch, onNavigate }) => {
               required
             >
               <option value="Donor">Donor</option>
-              <option value="Volunteer">Receiver</option>
+              <option value="Receiver">Receiver</option>
               <option value="Organization">Organization</option>
               <option value="Admin">Admin</option>
             </select>

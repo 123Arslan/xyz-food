@@ -1,46 +1,56 @@
 import React, { useState } from 'react';
-
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from './AuthContext';
 import './Header.css';
 
-const Header = ({ onNavigate }) => {
+const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const { isAuthenticated, logout, isDonor, isReceiver, isAdmin } = useAuth();
+  const navigate = useNavigate();
 
   const toggleMenu = () => {
     setIsMenuOpen(!isMenuOpen);
   };
 
-  const handleNavigation = (action, e) => {
-    if (e) e.preventDefault();
+  const handleLinkClick = () => {
     setIsMenuOpen(false); // Close menu on mobile after click
-    if (onNavigate) {
-      onNavigate(action);
-    }
+  };
+
+  const handleLogout = () => {
+    setIsMenuOpen(false);
+    logout();
+    navigate('/login');
   };
 
   return (
     <header className="header">
       <div className="header-container">
         <div className="header-logo">
-          <a href="/" onClick={(e) => handleNavigation('home', e)}>
-
+          <Link to="/" onClick={handleLinkClick}>
             <span className="logo-text">Food</span> Donation
-          </a>
+          </Link>
         </div>
 
         <div className={`nav-menu ${isMenuOpen ? 'active' : ''}`}>
           <ul className="nav-links">
-            <li><a href="#home" onClick={(e) => handleNavigation('home', e)}>Home</a></li>
-            <li><a href="#about" onClick={(e) => handleNavigation('about', e)}>About</a></li>
-            <li><a href="#donor" onClick={(e) => handleNavigation('donor_dashboard', e)}>Donor</a></li>
-            <li><a href="#request" onClick={(e) => handleNavigation('receiver_dashboard', e)}>Request</a></li>
-            <li><a href="#impact" onClick={(e) => handleNavigation('impact', e)}>Our Impact</a></li>
-            <li><a href="#contact" onClick={(e) => handleNavigation('contact', e)}>Contact Us</a></li>
-            <li><a href="#admin" onClick={(e) => handleNavigation('admin', e)}>Admin Dashboard</a></li>
+            <li><Link to="/" onClick={handleLinkClick}>Home</Link></li>
+            <li><Link to="/about" onClick={handleLinkClick}>About</Link></li>
+            {isDonor && <li><Link to="/donor-dashboard" onClick={handleLinkClick}>Donor Dashboard</Link></li>}
+            {isReceiver && <li><Link to="/receiver-dashboard" onClick={handleLinkClick}>Receiver Dashboard</Link></li>}
+            {isAdmin && <li><Link to="/admin" onClick={handleLinkClick}>Admin Dashboard</Link></li>}
+            <li><Link to="/impact" onClick={handleLinkClick}>Our Impact</Link></li>
+            <li><Link to="/contact" onClick={handleLinkClick}>Contact Us</Link></li>
           </ul>
 
           <div className="nav-buttons">
-            <button className="btn-login" onClick={() => handleNavigation('login')}>Login</button>
-            <button className="btn-signup" onClick={() => handleNavigation('signup')}>Sign Up</button>
+            {isAuthenticated ? (
+              <button className="btn-signup animate-pulse" onClick={handleLogout}>Log Out</button>
+            ) : (
+              <>
+                <button className="btn-login" onClick={() => { handleLinkClick(); navigate('/login'); }}>Login</button>
+                <button className="btn-signup" onClick={() => { handleLinkClick(); navigate('/signup'); }}>Sign Up</button>
+              </>
+            )}
           </div>
         </div>
 

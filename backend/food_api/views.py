@@ -6,7 +6,7 @@ from rest_framework.authtoken.models import Token
 from django.contrib.auth import authenticate
 from django.contrib.auth.models import User
 from django.db import connection
-from .serializers import SignupSerializer, UserSerializer
+from .serializers import SignupSerializer, UserSerializer, LoginSerializer
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -25,29 +25,51 @@ def signup(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def login(request):
-    email = request.data.get('email')
-    password = request.data.get('password')
-    
-    if not email or not password:
-        return Response({"error": "Please provide both email and password"}, status=status.HTTP_400_BAD_REQUEST)
-    
-    # Lookup the user by email to get their actual username (in case they differ in the existing database)
-    try:
-        user_obj = User.objects.get(email=email)
-        username = user_obj.username
-    except User.DoesNotExist:
-        username = email  # Fallback to email as username
-        
-    user = authenticate(username=username, password=password)
-    
-    if user:
+    serializer = LoginSerializer(data=request.data)
+    if serializer.is_valid():
+        user = serializer.validated_data['user']
         token, created = Token.objects.get_or_create(user=user)
+        
+        is_donor = False
+        is_receiver = False
+        is_admin = False
+        try:
+            profile = user.profile
+            account_type = profile.account_type.lower()
+            if account_type in ['donor', 'organization']:
+                is_donor = True
+            elif account_type == 'receiver':
+                is_receiver = True
+            elif account_type == 'admin' or user.is_staff or user.is_superuser:
+                is_admin = True
+        except Exception:
+            if user.is_staff or user.is_superuser:
+                is_admin = True
+            
         return Response({
-            "user": UserSerializer(user).data,
-            "token": token.key
+            "token": token.key,
+            "username": user.email,
+            "is_donor": is_donor,
+            "is_receiver": is_receiver,
+            "is_admin": is_admin
         }, status=status.HTTP_200_OK)
+        
+    errors = serializer.errors
+    error_msg = "Invalid Credentials"
+    status_code = status.HTTP_401_UNAUTHORIZED
     
-    return Response({"error": "Invalid Credentials"}, status=status.HTTP_401_UNAUTHORIZED)
+    if 'email' in errors:
+        error_msg = errors['email'][0]
+        status_code = status.HTTP_400_BAD_REQUEST
+    elif 'password' in errors:
+        error_msg = errors['password'][0]
+        status_code = status.HTTP_400_BAD_REQUEST
+    elif 'non_field_errors' in errors:
+        error_msg = errors['non_field_errors'][0]
+        if "Must include" in error_msg:
+            status_code = status.HTTP_400_BAD_REQUEST
+            
+    return Response({"error": error_msg}, status=status_code)
 
 @api_view(['GET'])
 @permission_classes([AllowAny])

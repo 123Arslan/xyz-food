@@ -1,5 +1,12 @@
 /* ===== Receiver Dashboard Styles ===== */
 
+.receiver-dashboard-page {
+  width: 100%;
+  min-height: 100vh;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
 /* ===== Hero Header (consistent with Donor Dashboard) ===== */
 .receiver-hero {
   background: linear-gradient(135deg, #0f172a 0%, #1e3a2f 50%, #0f2720 100%);

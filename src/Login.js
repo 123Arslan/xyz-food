@@ -1,13 +1,18 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from './AuthContext';
 import './Login.css';
 
-const Login = ({ onSwitch, onNavigate }) => {
+const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  
+  const { login } = useAuth();
+  const navigate = useNavigate();
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -22,29 +27,20 @@ const Login = ({ onSwitch, onNavigate }) => {
 
       const data = response.data;
 
-      // Store token and user data depending on rememberMe setting
-      const storage = rememberMe ? localStorage : sessionStorage;
-      storage.setItem('authToken', data.token);
-      storage.setItem('userData', JSON.stringify(data.user));
+      // Log in globally using Context
+      login(data.token, data.username, data.is_donor, data.is_receiver, data.is_admin, rememberMe);
 
       setLoading(false);
-      alert("Login successful!");
 
-      // Redirect to correct dashboard or home page
-      if (onNavigate) {
-        const accountType = data.user.profile?.account_type?.toLowerCase();
-        if (accountType === 'donor') {
-          onNavigate('donor_dashboard');
-        } else if (accountType === 'receiver') {
-          onNavigate('receiver_dashboard');
-        } else if (accountType === 'admin') {
-          onNavigate('admin');
-        } else {
-          onNavigate('home');
-        }
+      // Role-Based Redirection
+      if (data.is_donor) {
+        navigate('/donor-dashboard');
+      } else if (data.is_receiver) {
+        navigate('/receiver-dashboard');
+      } else if (data.is_admin) {
+        navigate('/admin');
       } else {
-        // Fallback redirection to dashboard or home page
-        window.location.href = '/';
+        navigate('/');
       }
     } catch (err) {
       setLoading(false);
@@ -62,7 +58,7 @@ const Login = ({ onSwitch, onNavigate }) => {
   };
 
   const handleSignUpClick = () => {
-    if (onSwitch) onSwitch();
+    navigate('/signup');
   };
 
   const handleGoogleLogin = () => {

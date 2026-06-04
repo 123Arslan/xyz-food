@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
+from django.contrib.auth import authenticate
 from django.db import transaction
 from .models import Profile
 
@@ -46,3 +47,32 @@ class SignupSerializer(serializers.Serializer):
                 account_type=account_type
             )
         return user
+
+class LoginSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+
+    def validate(self, data):
+        email = data.get('email')
+        password = data.get('password')
+
+        if not email or not password:
+            raise serializers.ValidationError("Must include both 'email' and 'password'.")
+
+        try:
+            user_obj = User.objects.get(email=email)
+            username = user_obj.username
+        except User.DoesNotExist:
+            username = email
+
+        user = authenticate(username=username, password=password)
+
+        if not user:
+            raise serializers.ValidationError("Invalid Credentials")
+
+        if not user.is_active:
+            raise serializers.ValidationError("User account is disabled.")
+
+        data['user'] = user
+        return data
+

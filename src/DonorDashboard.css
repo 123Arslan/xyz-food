@@ -1,5 +1,12 @@
 /* ===== Donor Dashboard Styles ===== */
 
+.donor-dashboard-page {
+  width: 100%;
+  min-height: 100vh;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
 /* ===== Hero Header (Screenshot-matched) ===== */
 .donor-hero {
   background: white;

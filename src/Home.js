@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './Home.css';
 
-const Home = ({ onNavigate }) => {
+const Home = () => {
+  const navigate = useNavigate();
   const [role, setRole] = useState('Donor');
 
   const handleActionClick = () => {
     if (role === 'Donor') {
-      onNavigate('donor_dashboard');
+      navigate('/donor-dashboard');
     } else {
-      onNavigate('receiver_dashboard');
+      navigate('/receiver-dashboard');
     }
   };
 
