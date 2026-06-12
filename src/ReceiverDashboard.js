@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import './ReceiverDashboard.css';
 import './Home.css';
 
@@ -85,22 +86,52 @@ const INITIAL_CLAIMS = [
 
 // ─── Helper: food type → CSS class ──────────────────────────
 const getFoodTypeClass = (type) => {
-  switch (type) {
-    case 'Cooked Meal': return 'food-type-cooked';
-    case 'Raw Ingredients': return 'food-type-raw';
-    case 'Packaged Food': return 'food-type-packaged';
-    case 'Baked Goods': return 'food-type-baked';
-    default: return 'food-type-cooked';
+  if (!type) return 'food-type-cooked';
+  switch (type.toLowerCase()) {
+    case 'cooked':
+    case 'cooked meal':
+    case 'cooked food':
+      return 'food-type-cooked';
+    case 'raw':
+    case 'veg':
+    case 'non-veg':
+    case 'raw ingredients':
+      return 'food-type-raw';
+    case 'packaged':
+    case 'packaged food':
+    case 'dry':
+    case 'dry rations':
+      return 'food-type-packaged';
+    case 'baked':
+    case 'baked goods':
+      return 'food-type-baked';
+    default:
+      return 'food-type-cooked';
   }
 };
 
 const getFoodIcon = (type) => {
-  switch (type) {
-    case 'Cooked Meal': return '🍛';
-    case 'Raw Ingredients': return '🥬';
-    case 'Packaged Food': return '📦';
-    case 'Baked Goods': return '🍞';
-    default: return '🍽️';
+  if (!type) return '🍛';
+  switch (type.toLowerCase()) {
+    case 'cooked':
+    case 'cooked meal':
+    case 'cooked food':
+      return '🍛';
+    case 'raw':
+    case 'veg':
+    case 'non-veg':
+    case 'raw ingredients':
+      return '🥬';
+    case 'packaged':
+    case 'packaged food':
+    case 'dry':
+    case 'dry rations':
+      return '📦';
+    case 'baked':
+    case 'baked goods':
+      return '🍞';
+    default:
+      return '🍽️';
   }
 };
 
@@ -133,10 +164,20 @@ const StarRating = ({ rating, onRate, disabled }) => {
 // ═══════════════════════════════════════════════════════════════
 const ReceiverDashboard = () => {
   const [selectedCity, setSelectedCity] = useState('Lahore');
-  const [foodItems, setFoodItems] = useState(INITIAL_FOOD_ITEMS);
+  const [foodItems, setFoodItems] = useState([]);
   const [claims, setClaims] = useState(INITIAL_CLAIMS);
   const [toast, setToast] = useState(null);
   const [activeTab, setActiveTab] = useState('food');
+
+  // Search and Filter States
+  const [searchLocation, setSearchLocation] = useState('');
+  const [foodType, setFoodType] = useState('All');
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // Coordinates States
+  const [userLatitude, setUserLatitude] = useState(null);
+  const [userLongitude, setUserLongitude] = useState(null);
 
   // Toast auto-dismiss
   useEffect(() => {
@@ -145,6 +186,70 @@ const ReceiverDashboard = () => {
       return () => clearTimeout(timer);
     }
   }, [toast]);
+
+  // Request browser geolocation on mount, fallback to IP geolocation
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setUserLatitude(position.coords.latitude);
+          setUserLongitude(position.coords.longitude);
+        },
+        async (error) => {
+          console.warn("Receiver geolocation unavailable, trying IP-based fallback", error);
+          try {
+            const res = await fetch('https://ipapi.co/json/');
+            const data = await res.json();
+            if (data.latitude && data.longitude) {
+              setUserLatitude(data.latitude);
+              setUserLongitude(data.longitude);
+            }
+          } catch (e) {
+            console.warn("IP geolocation fallback failed", e);
+          }
+        }
+      );
+    }
+  }, []);
+
+  // Fetch food listings from backend
+  const fetchAvailableFood = async () => {
+    setIsLoading(true);
+    setErrorMsg('');
+    try {
+      const params = {
+        location: searchLocation,
+        food_type: foodType
+      };
+      if (userLatitude && userLongitude) {
+        params.lat = userLatitude;
+        params.lng = userLongitude;
+      }
+      const response = await axios.get('http://localhost:8000/api/get-food/', { params });
+      setFoodItems(response.data);
+    } catch (err) {
+      console.error('Error fetching food listings:', err);
+      setErrorMsg('Failed to load food listings. Please try again later.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Trigger automatic fetch on filter inputs or coordinates change
+  useEffect(() => {
+    fetchAvailableFood();
+  }, [searchLocation, foodType, userLatitude, userLongitude]);
+
+  // Date formatter helper
+  const formatDate = (dateStr) => {
+    if (!dateStr) return 'N/A';
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch (e) {
+      return dateStr;
+    }
+  };
 
   // ─── Stats ────────────────────────────────────────────────
   const mealsAvailable = foodItems.reduce((sum, item) => {
@@ -165,15 +270,15 @@ const ReceiverDashboard = () => {
     // Add to claims with Pending status
     const newClaim = {
       id: Date.now(),
-      name: item.name,
-      donor: item.donor,
+      name: item.food_title || item.name || 'Food Item',
+      donor: item.user?.profile?.full_name || item.user?.username || item.donor || 'Donor',
       status: 'Pending',
-      icon: getFoodIcon(item.type),
+      icon: getFoodIcon(item.food_type || item.type),
       rating: 0,
       feedbackSubmitted: false,
     };
     setClaims(prev => [newClaim, ...prev]);
-    setToast({ icon: '✅', message: `"${item.name}" claimed successfully!` });
+    setToast({ icon: '✅', message: `"${item.food_title || item.name}" claimed successfully!` });
   };
 
   // ─── Mark as Picked Up ────────────────────────────────────
@@ -207,8 +312,6 @@ const ReceiverDashboard = () => {
   // ─── Navigation Handlers (for footer links) ───────────────
   const handleNavigation = (section) => {
     setToast({ icon: '🔗', message: `Navigating to ${section}...` });
-    // Here you can add actual navigation logic using React Router if needed
-    // Example: navigate(`/${section.toLowerCase()}`);
   };
 
   // ─── Get status CSS class ─────────────────────────────────
@@ -227,41 +330,158 @@ const ReceiverDashboard = () => {
   // ═══════════════════════════════════════════════════════════
   const renderFoodList = () => (
     <div className="receiver-section">
+      {/* Search and Filter Section */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-150 p-6 mb-8">
+        <div className="flex flex-col md:flex-row md:items-end gap-4">
+          {/* Search Location Input */}
+          <div className="flex-1">
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+              Search Location
+            </label>
+            <div className="relative">
+              <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
+                📍
+              </span>
+              <input
+                type="text"
+                value={searchLocation}
+                onChange={(e) => setSearchLocation(e.target.value)}
+                placeholder="Enter pickup location or city..."
+                className="w-full pl-9 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all duration-200"
+              />
+            </div>
+          </div>
+
+          {/* Food Type Filter Dropdown */}
+          <div className="w-full md:w-64">
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+              Food Type
+            </label>
+            <div className="relative">
+              <select
+                value={foodType}
+                onChange={(e) => setFoodType(e.target.value)}
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all duration-200"
+              >
+                <option value="All">All Food Types</option>
+                <option value="Veg">Veg</option>
+                <option value="Non-Veg">Non-Veg</option>
+                <option value="Cooked Food">Cooked Food</option>
+                <option value="Dry Rations">Dry Rations</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Search Action Button */}
+          <div className="w-full md:w-auto">
+            <button
+              onClick={fetchAvailableFood}
+              className="w-full md:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl shadow-sm hover:shadow transition-all duration-200 flex items-center justify-center gap-2"
+            >
+              <span>🔍</span> Search
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div className="receiver-section-header">
         <h2 className="receiver-section-title">
           <span className="section-icon">🍽️</span>
-          Available Food
+          Available Food Listings
         </h2>
-        <span className="receiver-section-subtitle">{foodItems.length} items near you</span>
+        <span className="receiver-section-subtitle">{foodItems.length} items found</span>
       </div>
 
-      {foodItems.length > 0 ? (
-        <div className="food-list-grid">
+      {isLoading ? (
+        <div className="flex flex-col items-center justify-center py-16">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-500 mb-4"></div>
+          <p className="text-gray-500 font-medium">Loading food listings...</p>
+        </div>
+      ) : errorMsg ? (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-center my-6">
+          {errorMsg}
+        </div>
+      ) : foodItems.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {foodItems.map(item => (
-            <div className="food-card" key={item.id}>
-              <img
-                src={item.image}
-                alt={item.name}
-                className="food-card-img"
-                loading="lazy"
-              />
-              <div className="food-card-body">
-                <span className={`food-card-type ${getFoodTypeClass(item.type)}`}>
-                  {item.type}
-                </span>
-                <h3 className="food-card-name">{item.name}</h3>
-                <p className="food-card-donor">
-                  <span>👤</span> {item.donor}
-                </p>
-                <p className="food-card-qty">📦 {item.quantity}</p>
-                <div className="food-card-footer">
-                  <span className="food-card-time">⏰ {item.timeLeft}</span>
+            <div className="bg-white rounded-2xl overflow-hidden border border-gray-150 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col group hover:-translate-y-1" key={item.id}>
+              {/* Image Header with Badge */}
+              <div className="relative h-48 w-full bg-gray-50 overflow-hidden border-b border-gray-100">
+                {item.food_image_url ? (
+                  <img
+                    src={item.food_image_url}
+                    alt={item.food_title}
+                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80"; // fallback
+                    }}
+                  />
+                ) : (
+                  <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 bg-gradient-to-br from-emerald-50 to-teal-50">
+                    <span className="text-4xl mb-2">🍛</span>
+                    <span className="text-xs font-semibold uppercase tracking-wider text-emerald-600/70">No Image</span>
+                  </div>
+                )}
+                {/* Food Type Badge */}
+                <div className="absolute top-4 left-4">
+                  <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow-sm ${
+                    item.food_type === 'Veg' ? 'bg-green-100 text-green-800' :
+                    item.food_type === 'Non-Veg' ? 'bg-red-100 text-red-800' :
+                    item.food_type === 'Cooked' ? 'bg-amber-100 text-amber-800' :
+                    'bg-blue-100 text-blue-800'
+                  }`}>
+                    {item.food_type === 'Cooked' ? 'Cooked Food' : item.food_type === 'Dry' ? 'Dry Rations' : item.food_type}
+                  </span>
+                </div>
+              </div>
+
+              {/* Card Body */}
+              <div className="p-5 flex-1 flex flex-col justify-between">
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900 mb-2 line-clamp-1">{item.food_title}</h3>
+                  <p className="text-sm text-gray-500 mb-4 line-clamp-2">{item.description || "No description provided."}</p>
+                  
+                  {/* Qty & Contact */}
+                  <div className="grid grid-cols-2 gap-3 mb-4 bg-gray-50 p-3 rounded-xl border border-gray-100">
+                    <div>
+                      <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Quantity</span>
+                      <span className="text-sm font-bold text-gray-700">📦 {item.quantity}</span>
+                    </div>
+                    <div>
+                      <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Contact Phone</span>
+                      <span className="text-sm font-bold text-gray-700">📞 {item.contact_phone}</span>
+                    </div>
+                  </div>
+
+                  {/* Pickup Location */}
+                  <div className="mb-4">
+                    <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Pickup Location</span>
+                    <p className="text-sm text-gray-600 flex items-start gap-1">
+                      <span className="mt-0.5">📍</span>
+                      <span className="line-clamp-2">{item.pickup_location}</span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Card Footer: Times & Claim Button */}
+                <div className="pt-4 border-t border-gray-100 mt-auto">
+                  <div className="flex flex-col gap-1.5 mb-4 text-xs text-gray-500">
+                    <div className="flex justify-between">
+                      <span>Pickup Time:</span>
+                      <span className="font-semibold text-gray-700">{formatDate(item.pickup_time)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Expiry Time:</span>
+                      <span className="font-semibold text-red-600">{formatDate(item.expiry_time)}</span>
+                    </div>
+                  </div>
+
                   <button
-                    className="food-claim-btn"
                     onClick={() => handleClaim(item.id)}
-                    id={`claim-btn-${item.id}`}
+                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-sm hover:shadow text-center flex items-center justify-center gap-2"
                   >
-                    Claim
+                    Claim Food
                   </button>
                 </div>
               </div>
@@ -269,10 +489,10 @@ const ReceiverDashboard = () => {
           ))}
         </div>
       ) : (
-        <div className="food-empty-state">
-          <div className="food-empty-icon">🔍</div>
-          <h3 className="food-empty-title">No food available right now</h3>
-          <p className="food-empty-text">Check back soon — new listings appear frequently!</p>
+        <div className="flex flex-col items-center justify-center py-16 bg-white border border-gray-100 rounded-2xl text-center p-8">
+          <div className="text-5xl mb-4">🔍</div>
+          <h3 className="text-lg font-bold text-gray-800 mb-1">No available food listings found</h3>
+          <p className="text-gray-500 max-w-sm">No available food listings found at the moment.</p>
         </div>
       )}
     </div>

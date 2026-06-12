@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect, useContext } from 'react';
+﻿import React, { createContext, useState, useEffect, useContext } from 'react';
 
 const AuthContext = createContext(null);
 
@@ -12,7 +12,6 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Restore session on mount
     const savedToken = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
     const savedUsername = localStorage.getItem('username') || sessionStorage.getItem('username');
     const savedIsDonor = localStorage.getItem('isDonor') === 'true' || sessionStorage.getItem('isDonor') === 'true';
@@ -32,8 +31,9 @@ export const AuthProvider = ({ children }) => {
 
   const login = (authToken, userEmail, userIsDonor, userIsReceiver, userIsAdmin = false, rememberMe = false) => {
     const storage = rememberMe ? localStorage : sessionStorage;
-    
+
     storage.setItem('authToken', authToken);
+    storage.setItem('token', authToken);
     storage.setItem('username', userEmail);
     storage.setItem('isDonor', String(userIsDonor));
     storage.setItem('isReceiver', String(userIsReceiver));
@@ -49,18 +49,19 @@ export const AuthProvider = ({ children }) => {
 
   const logout = () => {
     localStorage.removeItem('authToken');
+    localStorage.removeItem('token');
     localStorage.removeItem('username');
     localStorage.removeItem('isDonor');
     localStorage.removeItem('isReceiver');
     localStorage.removeItem('isAdmin');
 
     sessionStorage.removeItem('authToken');
+    sessionStorage.removeItem('token');
     sessionStorage.removeItem('username');
     sessionStorage.removeItem('isDonor');
     sessionStorage.removeItem('isReceiver');
     sessionStorage.removeItem('isAdmin');
 
-    // Clean up old session formats if they exist
     localStorage.removeItem('userData');
     sessionStorage.removeItem('userData');
 
