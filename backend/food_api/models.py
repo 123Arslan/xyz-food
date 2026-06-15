@@ -12,6 +12,8 @@ class Profile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     full_name = models.CharField(max_length=255)
     account_type = models.CharField(max_length=20, choices=ACCOUNT_TYPE_CHOICES, default='Donor')
+    contact_phone = models.CharField(max_length=30, blank=True, default='')
+    instructions = models.TextField(blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -27,7 +29,7 @@ class FoodListing(models.Model):
 
     STATUS_CHOICES = (
         ('Available', 'Available'),
-        ('Claimed', 'Claimed'),
+        ('Pending', 'Pending'),
         ('Completed', 'Completed'),
     )
 
@@ -62,3 +64,21 @@ class FoodItem(models.Model):
 
     def __str__(self):
         return self.name
+
+class Donation(models.Model):
+    donor_id = models.ForeignKey(User, on_delete=models.CASCADE, related_name='donations_made', db_column='donor_id')
+    receiver_id = models.ForeignKey(User, on_delete=models.CASCADE, related_name='donations_received', db_column='receiver_id')
+    food_id = models.ForeignKey(FoodListing, on_delete=models.CASCADE, related_name='donations', db_column='food_id')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Donation of {self.food_id.food_title} from {self.donor_id.email} to {self.receiver_id.email}"
+
+class Feedback(models.Model):
+    rating = models.IntegerField()
+    comment = models.TextField()
+    food_id = models.ForeignKey(FoodListing, on_delete=models.CASCADE, related_name='feedbacks', db_column='food_id')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Feedback for {self.food_id.food_title} - {self.rating} Stars"

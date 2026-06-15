@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import './ReceiverDashboard.css';
 import './Home.css';
+import { claimFood, completeTransaction, getMyClaims } from './api';
 
 // ─── Mock Data ───────────────────────────────────────────────
 const CITIES = ['Lahore', 'Karachi', 'Islamabad', 'Rawalpindi', 'Faisalabad', 'Multan'];
@@ -165,9 +166,16 @@ const StarRating = ({ rating, onRate, disabled }) => {
 const ReceiverDashboard = () => {
   const [selectedCity, setSelectedCity] = useState('Lahore');
   const [foodItems, setFoodItems] = useState([]);
-  const [claims, setClaims] = useState(INITIAL_CLAIMS);
+  const [claims, setClaims] = useState([]);
   const [toast, setToast] = useState(null);
   const [activeTab, setActiveTab] = useState('food');
+
+  // Feedback states
+  const [feedbackFoodId, setFeedbackFoodId] = useState(null);
+  const [feedbackRating, setFeedbackRating] = useState(0);
+  const [feedbackComment, setFeedbackComment] = useState('');
+  const [showFeedbackSuccess, setShowFeedbackSuccess] = useState(false);
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
 
   // Search and Filter States
   const [searchLocation, setSearchLocation] = useState('');
@@ -235,10 +243,35 @@ const ReceiverDashboard = () => {
     }
   };
 
+  const fetchMyClaims = async () => {
+    const response = await getMyClaims();
+    if (response.success) {
+      const mappedClaims = response.data.map(donation => {
+        const listing = donation.food_listing || {};
+        const donorUser = donation.donor || {};
+        const donorProfile = donorUser.profile || {};
+        return {
+          id: donation.id,
+          foodId: listing.id,
+          name: listing.food_title || 'Food Item',
+          donor: donorProfile.full_name || donorUser.username || 'Donor',
+          donorPhone: donorProfile.contact_phone || listing.contact_phone || 'N/A',
+          donorInstructions: donorProfile.instructions || listing.description || 'No instructions provided.',
+          status: listing.status,
+          icon: getFoodIcon(listing.food_type),
+          rating: 0,
+          feedbackSubmitted: false,
+        };
+      });
+      setClaims(mappedClaims);
+    }
+  };
+
   // Trigger automatic fetch on filter inputs or coordinates change
   useEffect(() => {
     fetchAvailableFood();
-  }, [searchLocation, foodType, userLatitude, userLongitude]);
+    fetchMyClaims();
+  }, [searchLocation, foodType, userLatitude, userLongitude, activeTab]);
 
   // Date formatter helper
   const formatDate = (dateStr) => {
@@ -260,25 +293,64 @@ const ReceiverDashboard = () => {
   const mealsFed = claims.filter(c => c.status === 'Completed').length;
 
   // ─── Claim a food item ────────────────────────────────────
-  const handleClaim = (foodId) => {
+  const handleClaim = async (foodId) => {
     const item = foodItems.find(f => f.id === foodId);
     if (!item) return;
 
-    // Remove from food list
-    setFoodItems(prev => prev.filter(f => f.id !== foodId));
+    const response = await claimFood(foodId);
+    if (response.success) {
+      setToast({ icon: '✅', message: `"${item.food_title || item.name}" claimed successfully!` });
+      fetchAvailableFood();
+      fetchMyClaims();
+    } else {
+      const errMsg = response.error?.error || response.error?.detail || 'Failed to claim food.';
+      setToast({ icon: '❌', message: errMsg });
+    }
+  };
 
-    // Add to claims with Pending status
-    const newClaim = {
-      id: Date.now(),
-      name: item.food_title || item.name || 'Food Item',
-      donor: item.user?.profile?.full_name || item.user?.username || item.donor || 'Donor',
-      status: 'Pending',
-      icon: getFoodIcon(item.food_type || item.type),
-      rating: 0,
-      feedbackSubmitted: false,
-    };
-    setClaims(prev => [newClaim, ...prev]);
-    setToast({ icon: '✅', message: `"${item.food_title || item.name}" claimed successfully!` });
+  const handleCompleteTransaction = async (foodId) => {
+    const response = await completeTransaction(foodId);
+    if (response.success) {
+      setToast({ icon: '✅', message: 'Transaction marked as completed!' });
+      fetchMyClaims();
+      // Open the feedback modal
+      setFeedbackFoodId(foodId);
+      setFeedbackRating(0);
+      setFeedbackComment('');
+      setShowFeedbackSuccess(false);
+    } else {
+      const errMsg = response.error?.error || response.error?.detail || 'Failed to complete transaction.';
+      setToast({ icon: '❌', message: errMsg });
+    }
+  };
+
+  const handleFeedbackSubmit = async (e) => {
+    e.preventDefault();
+    if (!feedbackRating) {
+      alert("Rating is mandatory. Please select 1-5 stars.");
+      return;
+    }
+    setSubmittingFeedback(true);
+    try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token') || '';
+      const headers = token ? { Authorization: `Token ${token}` } : {};
+      const payload = {
+        rating: feedbackRating,
+        comment: feedbackComment,
+        food_id: feedbackFoodId,
+      };
+      await axios.post('http://localhost:8000/api/feedback/', payload, { headers });
+      setShowFeedbackSuccess(true);
+      setTimeout(() => {
+        setFeedbackFoodId(null);
+        setShowFeedbackSuccess(false);
+      }, 2000);
+    } catch (err) {
+      console.error("Failed to submit feedback:", err);
+      alert(err.response?.data?.error || err.response?.data?.rating?.[0] || "Failed to submit feedback. Please try again.");
+    } finally {
+      setSubmittingFeedback(false);
+    }
   };
 
   // ─── Mark as Picked Up ────────────────────────────────────
@@ -520,6 +592,14 @@ const ReceiverDashboard = () => {
                 <h4 className="claim-card-name">{claim.name}</h4>
                 <p className="claim-card-donor">From: {claim.donor}</p>
 
+                {claim.status === 'Pending' && (
+                  <div style={{ marginTop: '0.5rem', backgroundColor: '#f0fdf4', padding: '0.75rem', borderRadius: '0.75rem', border: '1px solid #dcfce7', fontSize: '0.75rem', color: '#374151' }}>
+                    <div style={{ fontWeight: 'bold', color: '#166534', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.625rem', marginBottom: '0.25rem' }}>Coordination Details</div>
+                    <div style={{ marginBottom: '0.125rem' }}>📞 <strong>Contact Phone:</strong> {claim.donorPhone}</div>
+                    <div>📝 <strong>Donor Instructions:</strong> {claim.donorInstructions}</div>
+                  </div>
+                )}
+
                 {/* Show star rating + feedback ONLY after Picked Up */}
                 {claim.status === 'Picked Up' && !claim.feedbackSubmitted && (
                   <div className="feedback-row">
@@ -555,6 +635,18 @@ const ReceiverDashboard = () => {
                   <span className="claim-status-dot"></span>
                   {claim.status}
                 </span>
+
+                {claim.status === 'Pending' && (
+                  <button
+                    className="claim-action-btn"
+                    style={{ backgroundColor: '#059669', color: '#ffffff', border: 'none', cursor: 'pointer', transition: 'background-color 0.2s' }}
+                    onMouseEnter={(e) => e.target.style.backgroundColor = '#047857'}
+                    onMouseLeave={(e) => e.target.style.backgroundColor = '#059669'}
+                    onClick={() => handleCompleteTransaction(claim.foodId)}
+                  >
+                    Mark as Completed
+                  </button>
+                )}
 
                 {/* Show "Picked Up" button for Ready for Pickup & Pending */}
                 {(claim.status === 'Pending' || claim.status === 'Ready for Pickup') && (
@@ -807,6 +899,89 @@ const ReceiverDashboard = () => {
           </div>
         </div>
       </footer>
+
+      {/* ─── Feedback Modal ─── */}
+      {feedbackFoodId !== null && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyCenter: 'center', justifyContent: 'center', padding: '1rem', backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)' }}>
+          <div style={{ backgroundColor: '#ffffff', borderRadius: '1.5rem', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', maxWidth: '28rem', width: '100%', border: '1px solid #f3f4f6', overflow: 'hidden' }}>
+            {showFeedbackSuccess ? (
+              <div style={{ padding: '2rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <div style={{ width: '4rem', height: '4rem', backgroundColor: '#d1fae5', color: '#059669', borderRadius: '9999px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.875rem', marginBottom: '1rem' }}>
+                  ✨
+                </div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#111827', marginBottom: '0.5rem' }}>Thank you!</h3>
+                <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>Your feedback has been submitted successfully.</p>
+              </div>
+            ) : (
+              <form onSubmit={handleFeedbackSubmit} style={{ padding: '2rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                  <h3 style={{ fontSize: '1.125rem', fontWeight: 'bold', color: '#030712' }}>Share Your Experience</h3>
+                  <button
+                    type="button"
+                    onClick={() => setFeedbackFoodId(null)}
+                    style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: '1.25rem' }}
+                  >
+                    ✕
+                  </button>
+                </div>
+                
+                <p style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '1.5rem' }}>
+                  Please rate this food donation. Your feedback helps build trust in our community.
+                </p>
+                
+                <div style={{ marginBottom: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Rating *
+                  </label>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <button
+                        key={star}
+                        type="button"
+                        onClick={() => setFeedbackRating(star)}
+                        style={{ background: 'none', border: 'none', fontSize: '2.25rem', cursor: 'pointer', color: star <= feedbackRating ? '#fbbf24' : '#e5e7eb', transition: 'transform 0.1s' }}
+                        aria-label={`Rate ${star} star${star > 1 ? 's' : ''}`}
+                      >
+                        ★
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>
+                    Comment
+                  </label>
+                  <textarea
+                    rows="3"
+                    value={feedbackComment}
+                    onChange={(e) => setFeedbackComment(e.target.value)}
+                    placeholder="Write a brief comment about the food quality, quantity, packaging..."
+                    style={{ width: '100%', padding: '0.75rem', backgroundColor: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '0.75rem', boxSizing: 'border-box' }}
+                  />
+                </div>
+                
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => setFeedbackFoodId(null)}
+                    style={{ flex: 1, padding: '0.75rem', backgroundColor: '#f3f4f6', border: 'none', borderRadius: '0.75rem', cursor: 'pointer', fontWeight: 'bold', color: '#4b5563' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submittingFeedback}
+                    style={{ flex: 1, padding: '0.75rem', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '0.75rem', cursor: 'pointer', fontWeight: 'bold' }}
+                  >
+                    {submittingFeedback ? 'Submitting...' : 'Submit'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ─── Toast Notification ─── */}
       {toast && (

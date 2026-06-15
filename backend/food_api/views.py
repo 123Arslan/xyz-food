@@ -184,3 +184,167 @@ def get_food(request):
 
     return Response(data, status=status.HTTP_200_OK)
 
+from django.db import transaction
+from .models import Donation
+from .serializers import DonationSerializer
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def claim_food(request, food_id):
+    try:
+        with transaction.atomic():
+            food_listing = FoodListing.objects.select_for_update().get(id=food_id, status='Available')
+            donation = Donation.objects.create(
+                donor_id=food_listing.user,
+                receiver_id=request.user,
+                food_id=food_listing
+            )
+            food_listing.status = 'Pending'
+            food_listing.save()
+            return Response({
+                "message": "Food claimed successfully",
+                "donation": DonationSerializer(donation).data
+            }, status=status.HTTP_200_OK)
+    except FoodListing.DoesNotExist:
+        return Response({"error": "Food listing is not available or does not exist."}, status=status.HTTP_400_BAD_REQUEST)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def complete_transaction(request, food_id):
+    try:
+        with transaction.atomic():
+            food_listing = FoodListing.objects.select_for_update().get(id=food_id)
+            if food_listing.status != 'Pending':
+                return Response({"error": "Food listing is not in Pending status."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            donation = Donation.objects.filter(food_id=food_listing).first()
+            if not donation:
+                return Response({"error": "No donation record found for this listing."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            if request.user != food_listing.user and request.user != donation.receiver_id:
+                return Response({"error": "You are not authorized to complete this transaction."}, status=status.HTTP_403_FORBIDDEN)
+            
+            food_listing.status = 'Completed'
+            food_listing.save()
+            return Response({
+                "message": "Transaction completed successfully",
+                "status": food_listing.status
+            }, status=status.HTTP_200_OK)
+    except FoodListing.DoesNotExist:
+        return Response({"error": "Food listing not found."}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_claims(request):
+    donations = Donation.objects.filter(receiver_id=request.user).order_by('-created_at')
+    serializer = DonationSerializer(donations, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+from .models import Feedback
+from .serializers import FeedbackSerializer
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def post_feedback(request):
+    serializer = FeedbackSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+from rest_framework.permissions import BasePermission
+
+class IsAdminRole(BasePermission):
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.user.is_staff or request.user.is_superuser:
+            return True
+        try:
+            return request.user.profile.account_type.lower() == 'admin'
+        except Exception:
+            return False
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdminRole])
+def admin_stats(request):
+    total_users = User.objects.count()
+    total_food = FoodListing.objects.filter(status='Available').count()
+    total_donations = Donation.objects.count()
+    
+    available_count = FoodListing.objects.filter(status='Available').count()
+    pending_count = FoodListing.objects.filter(status='Pending').count()
+    completed_count = FoodListing.objects.filter(status='Completed').count()
+    
+    return Response({
+        "total_users": total_users,
+        "total_food": total_food,
+        "total_donations": total_donations,
+        "status_stats": {
+            "available": available_count,
+            "pending": pending_count,
+            "completed": completed_count
+        }
+    }, status=status.HTTP_200_OK)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdminRole])
+def admin_listings(request):
+    listings = FoodListing.objects.all().order_by('-created_at')
+    serializer = FoodListingSerializer(listings, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated, IsAdminRole])
+def admin_delete_listing(request, pk):
+    try:
+        listing = FoodListing.objects.get(pk=pk)
+        listing.delete()
+        return Response({"message": "Listing deleted successfully"}, status=status.HTTP_200_OK)
+    except FoodListing.DoesNotExist:
+        return Response({"error": "Listing not found"}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsAdminRole])
+def admin_users(request):
+    users = User.objects.all().order_by('id')
+    data = []
+    for u in users:
+        account_type = 'Donor'
+        full_name = u.username
+        try:
+            profile = u.profile
+            account_type = profile.account_type
+            full_name = profile.full_name
+        except Exception:
+            if u.is_staff or u.is_superuser:
+                account_type = 'Admin'
+        data.append({
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "full_name": full_name,
+            "account_type": account_type,
+            "is_active": u.is_active,
+        })
+    return Response(data, status=status.HTTP_200_OK)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsAdminRole])
+def admin_toggle_ban_user(request, user_id):
+    try:
+        user = User.objects.get(id=user_id)
+        if user.is_superuser:
+            return Response({"error": "Cannot ban superuser"}, status=status.HTTP_400_BAD_REQUEST)
+        user.is_active = not user.is_active
+        user.save()
+        action = "suspended" if not user.is_active else "activated"
+        return Response({"message": f"User {action} successfully", "is_active": user.is_active}, status=status.HTTP_200_OK)
+    except User.DoesNotExist:
+        return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+

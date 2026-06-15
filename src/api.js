@@ -1,4 +1,4 @@
-﻿const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = 'http://localhost:8000/api';
 
 const getAuthToken = () => {
   return (
@@ -158,3 +158,133 @@ export const deleteFoodListing = async (listingId) => {
     return { success: false, error: 'Network error or server down' };
   }
 };
+
+export const claimFood = async (foodId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/claim-food/${foodId}/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+    });
+    const data = await response.json();
+    return response.ok ? { success: true, data } : { success: false, error: data };
+  } catch (error) {
+    return { success: false, error: 'Network error or server down' };
+  }
+};
+
+export const completeTransaction = async (foodId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/complete-transaction/${foodId}/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+    });
+    const data = await response.json();
+    return response.ok ? { success: true, data } : { success: false, error: data };
+  } catch (error) {
+    return { success: false, error: 'Network error or server down' };
+  }
+};
+
+export const getMyClaims = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/my-claims/`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+    });
+    const data = await response.json();
+    return response.ok ? { success: true, data } : { success: false, error: data };
+  } catch (error) {
+    return { success: false, error: 'Network error or server down' };
+  }
+};
+
+// Admin API endpoints
+export const getAdminStats = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/admin/stats/`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+    });
+    const data = await response.json();
+    return response.ok ? { success: true, data } : { success: false, error: data };
+  } catch (error) {
+    return { success: false, error: 'Network error or server down' };
+  }
+};
+
+export const getAdminListings = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/admin/listings/`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+    });
+    const data = await response.json();
+    return response.ok ? { success: true, data } : { success: false, error: data };
+  } catch (error) {
+    return { success: false, error: 'Network error or server down' };
+  }
+};
+
+export const deleteAdminListing = async (listingId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/admin/listings/${listingId}/`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+    });
+    const data = await response.json();
+    return response.ok ? { success: true, data } : { success: false, error: data };
+  } catch (error) {
+    return { success: false, error: 'Network error or server down' };
+  }
+};
+
+export const getAdminUsers = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/admin/users/`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+    });
+    const data = await response.json();
+    return response.ok ? { success: true, data } : { success: false, error: data };
+  } catch (error) {
+    return { success: false, error: 'Network error or server down' };
+  }
+};
+
+export const toggleBanUser = async (userId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/admin/users/${userId}/ban/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+    });
+    const data = await response.json();
+    return response.ok ? { success: true, data } : { success: false, error: data };
+  } catch (error) {
+    return { success: false, error: 'Network error or server down' };
+  }
+};
+

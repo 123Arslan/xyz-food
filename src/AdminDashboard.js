@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer
 } from 'recharts';
 import './AdminDashboard.css';
+import { getAdminStats, getAdminListings, deleteAdminListing, getAdminUsers, toggleBanUser } from './api';
 
 const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -11,40 +12,106 @@ const AdminDashboard = () => {
   const [postForm, setPostForm] = useState({ title: '', description: '', location: '' });
   const [settingsForm, setSettingsForm] = useState({ oldPassword: '', newPassword: '', notifications: true });
 
-  // Mock Data
+  // API Data state
+  const [stats, setStats] = useState(null);
+  const [listings, setListings] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  // Mock Data for charts
   const monthlyDonations = [
     { month: 'Jan', donations: 120 }, { month: 'Feb', donations: 250 },
     { month: 'Mar', donations: 380 }, { month: 'Apr', donations: 500 },
     { month: 'May', donations: 420 }, { month: 'Jun', donations: 300 }
   ];
 
-  const activeListings = [
-    { id: 1, title: 'Leftover Bread', status: 'Available', donor: 'John Doe' },
-    { id: 2, title: 'Fresh Veggies', status: 'Claimed', donor: 'Jane Smith' },
-    { id: 3, title: 'Cooked Meals', status: 'Available', donor: 'Restaurant A' },
-  ];
-
-  const donationHistory = [
-    { id: 101, title: '50 Boxed Lunches', date: '2026-04-10', receiver: 'Shelter B' },
-    { id: 102, title: 'Bakery Items', date: '2026-04-15', receiver: 'Community Center' },
-  ];
-
-  const users = {
-    admins: [{ id: 1, name: 'Admin 1', email: 'admin1@test.com' }],
-    donors: [{ id: 2, name: 'John Doe', email: 'john@test.com' }, { id: 3, name: 'Restaurant A', email: 'rest@test.com' }],
-    receivers: [{ id: 4, name: 'Shelter B', email: 'shelter@test.com' }]
-  };
-
   const feedbacks = [
     { id: 1, text: "The fresh produce really helped our community kitchen this week. Thank you!", author: "Shelter B" },
     { id: 2, text: "Very smooth process claiming the food. The app works great.", author: "Community Center" }
   ];
 
-  const topDonors = [
-    { id: 1, name: 'Restaurant A', medal: '🥇', donations: 150 },
-    { id: 2, name: 'John Doe', medal: '🥈', donations: 85 },
-    { id: 3, name: 'Jane Smith', medal: '🥉', donations: 40 },
-  ];
+  // Fetch data on component mount
+  useEffect(() => {
+    fetchAdminData();
+  }, []);
+
+  const fetchAdminData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [statsRes, listingsRes, usersRes] = await Promise.all([
+        getAdminStats(),
+        getAdminListings(),
+        getAdminUsers()
+      ]);
+
+      if (statsRes.success) setStats(statsRes.data);
+      if (listingsRes.success) setListings(listingsRes.data);
+      if (usersRes.success) setUsers(usersRes.data);
+    } catch (err) {
+      setError('Failed to load admin data');
+      console.error('Error fetching admin data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteListing = async (listingId) => {
+    if (!window.confirm('Are you sure you want to delete this listing?')) return;
+    
+    try {
+      const result = await deleteAdminListing(listingId);
+      if (result.success) {
+        setListings(listings.filter(l => l.id !== listingId));
+        alert('Listing deleted successfully');
+      } else {
+        alert('Failed to delete listing: ' + (result.error?.error || 'Unknown error'));
+      }
+    } catch (err) {
+      alert('Error deleting listing');
+      console.error(err);
+    }
+  };
+
+  const handleToggleBan = async (userId) => {
+    try {
+      const result = await toggleBanUser(userId);
+      if (result.success) {
+        setUsers(users.map(u => u.id === userId ? { ...u, is_active: result.data.is_active } : u));
+        alert(result.data.message);
+      } else {
+        alert('Failed to update user status: ' + (result.error?.error || 'Unknown error'));
+      }
+    } catch (err) {
+      alert('Error updating user status');
+      console.error(err);
+    }
+  };
+
+  // Group users by account type
+  const usersByRole = users.reduce((acc, user) => {
+    const role = user.account_type || 'Donor';
+    if (!acc[role]) acc[role] = [];
+    acc[role].push(user);
+    return acc;
+  }, {});
+
+  // Calculate top donors based on listings count
+  const donorStats = users
+    .filter(u => u.account_type === 'Donor' || u.account_type === 'Organization')
+    .map(u => ({
+      ...u,
+      donationCount: listings.filter(l => l.user === u.id).length
+    }))
+    .sort((a, b) => b.donationCount - a.donationCount)
+    .slice(0, 3)
+    .map((d, i) => ({
+      id: d.id,
+      name: d.full_name || d.username,
+      medal: i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉',
+      donations: d.donationCount
+    }));
 
   const handlePostChange = (e) => setPostForm({ ...postForm, [e.target.name]: e.target.value });
   const handleSettingsChange = (e) => {
@@ -68,19 +135,27 @@ const AdminDashboard = () => {
 
   const renderOverview = () => (
     <div className="admin-content-section">
-      <div className="stats-grid">
-        <div className="admin-card stat-card"><div className="stat-value">2</div><div className="stat-label">Total Users</div></div>
-        <div className="admin-card stat-card"><div className="stat-value">8</div><div className="stat-label">Total Listings</div></div>
-        <div className="admin-card stat-card"><div className="stat-value">1</div><div className="stat-label">Completed</div></div>
-        <div className="admin-card stat-card"><div className="stat-value">0</div><div className="stat-label">Open Complaints</div></div>
-      </div>
+      {loading ? (
+        <div className="admin-card"><p>Loading...</p></div>
+      ) : error ? (
+        <div className="admin-card"><p className="error">{error}</p></div>
+      ) : (
+        <>
+          <div className="stats-grid">
+            <div className="admin-card stat-card"><div className="stat-value">{stats?.total_users || 0}</div><div className="stat-label">Total Users</div></div>
+            <div className="admin-card stat-card"><div className="stat-value">{stats?.total_food || 0}</div><div className="stat-label">Available Food</div></div>
+            <div className="admin-card stat-card"><div className="stat-value">{stats?.total_donations || 0}</div><div className="stat-label">Completed Donations</div></div>
+            <div className="admin-card stat-card"><div className="stat-value">{listings.length}</div><div className="stat-label">Total Listings</div></div>
+          </div>
 
-      <h3 className="section-title">Listings by Status</h3>
-      <div className="stats-grid status-grid">
-        <div className="admin-card stat-card status-available"><div className="stat-value">3</div><div className="stat-label">Available</div></div>
-        <div className="admin-card stat-card status-claimed"><div className="stat-value">4</div><div className="stat-label">Claimed</div></div>
-        <div className="admin-card stat-card status-completed"><div className="stat-value">1</div><div className="stat-label">Completed</div></div>
-      </div>
+          <h3 className="section-title">Listings by Status</h3>
+          <div className="stats-grid status-grid">
+            <div className="admin-card stat-card status-available"><div className="stat-value">{stats?.status_stats?.available || 0}</div><div className="stat-label">Available</div></div>
+            <div className="admin-card stat-card status-claimed"><div className="stat-value">{stats?.status_stats?.pending || 0}</div><div className="stat-label">Pending</div></div>
+            <div className="admin-card stat-card status-completed"><div className="stat-value">{stats?.status_stats?.completed || 0}</div><div className="stat-label">Completed</div></div>
+          </div>
+        </>
+      )}
 
       <div className="admin-card chart-card">
         <h3 className="card-title">Monthly Donations</h3>
@@ -101,45 +176,49 @@ const AdminDashboard = () => {
 
   const renderUsers = () => (
     <div className="admin-content-section">
-      <div className="admin-grid">
-        <div className="admin-card">
-          <h3 className="card-title">Users by Role</h3>
-          
-          <div className="role-list-section">
-            <h4 className="role-title">Admins</h4>
-            <ul className="user-list">
-              {users.admins.map(u => <li key={u.id}>{u.name} <span>({u.email})</span></li>)}
-            </ul>
-          </div>
-          <div className="role-list-section">
-            <h4 className="role-title">Donors</h4>
-            <ul className="user-list">
-              {users.donors.map(u => <li key={u.id}>{u.name} <span>({u.email})</span></li>)}
-            </ul>
-          </div>
-          <div className="role-list-section">
-            <h4 className="role-title">Receivers</h4>
-            <ul className="user-list">
-              {users.receivers.map(u => <li key={u.id}>{u.name} <span>({u.email})</span></li>)}
-            </ul>
-          </div>
-        </div>
-
-        <div className="admin-card">
-          <h3 className="card-title">Top Donors Badges</h3>
-          <div className="badges-list">
-            {topDonors.map(donor => (
-              <div key={donor.id} className="badge-item">
-                <span className="badge-medal">{donor.medal}</span>
-                <div className="badge-info">
-                  <strong>{donor.name}</strong>
-                  <p>{donor.donations} Donations</p>
-                </div>
+      {loading ? (
+        <div className="admin-card"><p>Loading...</p></div>
+      ) : error ? (
+        <div className="admin-card"><p className="error">{error}</p></div>
+      ) : (
+        <div className="admin-grid">
+          <div className="admin-card">
+            <h3 className="card-title">Users by Role</h3>
+            
+            {Object.entries(usersByRole).map(([role, roleUsers]) => (
+              <div key={role} className="role-list-section">
+                <h4 className="role-title">{role}s</h4>
+                <ul className="user-list">
+                  {roleUsers.map(u => (
+                    <li key={u.id}>
+                      {u.full_name || u.username} 
+                      <span>({u.email})</span>
+                      <span className={`status-indicator ${u.is_active ? 'active' : 'banned'}`}>
+                        {u.is_active ? 'Active' : 'Banned'}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             ))}
           </div>
+
+          <div className="admin-card">
+            <h3 className="card-title">Top Donors Badges</h3>
+            <div className="badges-list">
+              {donorStats.length > 0 ? donorStats.map(donor => (
+                <div key={donor.id} className="badge-item">
+                  <span className="badge-medal">{donor.medal}</span>
+                  <div className="badge-info">
+                    <strong>{donor.name}</strong>
+                    <p>{donor.donations} Donations</p>
+                  </div>
+                </div>
+              )) : <p>No donor data available</p>}
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 
@@ -166,61 +245,47 @@ const AdminDashboard = () => {
         </div>
 
         <div className="admin-card span-full">
-          <h3 className="card-title">Active Listings</h3>
-          <div className="table-responsive">
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Title</th>
-                  <th>Donor</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {activeListings.map(listing => (
-                  <tr key={listing.id}>
-                    <td>#{listing.id}</td>
-                    <td>{listing.title}</td>
-                    <td>{listing.donor}</td>
-                    <td><span className={`status-badge ${listing.status.toLowerCase()}`}>{listing.status}</span></td>
-                    <td className="action-btns">
-                      <button className="edit-btn">Edit</button>
-                      <button className="complete-btn">Complete</button>
-                      <button className="delete-btn">Delete</button>
-                    </td>
+          <h3 className="card-title">All Listings</h3>
+          {loading ? (
+            <p>Loading...</p>
+          ) : error ? (
+            <p className="error">{error}</p>
+          ) : (
+            <div className="table-responsive">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Title</th>
+                    <th>Type</th>
+                    <th>Location</th>
+                    <th>Status</th>
+                    <th>Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="admin-card span-full">
-          <h3 className="card-title">Donation History</h3>
-          <div className="table-responsive">
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Title</th>
-                  <th>Date</th>
-                  <th>Receiver</th>
-                </tr>
-              </thead>
-              <tbody>
-                {donationHistory.map(history => (
-                  <tr key={history.id}>
-                    <td>#{history.id}</td>
-                    <td>{history.title}</td>
-                    <td>{history.date}</td>
-                    <td>{history.receiver}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {listings.map(listing => (
+                    <tr key={listing.id}>
+                      <td>#{listing.id}</td>
+                      <td>{listing.food_title}</td>
+                      <td>{listing.food_type}</td>
+                      <td>{listing.pickup_location}</td>
+                      <td><span className={`status-badge ${listing.status.toLowerCase()}`}>{listing.status}</span></td>
+                      <td className="action-btns">
+                        <button 
+                          className="delete-btn" 
+                          onClick={() => handleDeleteListing(listing.id)}
+                        >
+                          Delete
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {listings.length === 0 && <p>No listings found</p>}
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -251,6 +316,50 @@ const AdminDashboard = () => {
         </div>
 
         <div className="admin-card">
+          <h3 className="card-title">User Management</h3>
+          {loading ? (
+            <p>Loading...</p>
+          ) : error ? (
+            <p className="error">{error}</p>
+          ) : (
+            <div className="table-responsive">
+              <table className="admin-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Name</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map(user => (
+                    <tr key={user.id}>
+                      <td>#{user.id}</td>
+                      <td>{user.full_name || user.username}</td>
+                      <td>{user.email}</td>
+                      <td>{user.account_type}</td>
+                      <td><span className={`status-badge ${user.is_active ? 'active' : 'banned'}`}>{user.is_active ? 'Active' : 'Banned'}</span></td>
+                      <td className="action-btns">
+                        <button 
+                          className={user.is_active ? 'ban-btn' : 'unban-btn'}
+                          onClick={() => handleToggleBan(user.id)}
+                        >
+                          {user.is_active ? 'Ban' : 'Unban'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {users.length === 0 && <p>No users found</p>}
+            </div>
+          )}
+        </div>
+
+        <div className="admin-card span-full">
           <h3 className="card-title">Receiver Feedback</h3>
           <div className="feedback-list">
             {feedbacks.map(fb => (

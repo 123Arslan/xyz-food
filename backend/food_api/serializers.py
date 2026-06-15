@@ -2,12 +2,12 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from django.db import transaction
-from .models import Profile, FoodListing
+from .models import Profile, FoodListing, Donation, Feedback
 
 class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
-        fields = ['full_name', 'account_type', 'created_at']
+        fields = ['full_name', 'account_type', 'contact_phone', 'instructions', 'created_at']
 
 class UserSerializer(serializers.ModelSerializer):
     profile = ProfileSerializer(read_only=True)
@@ -30,6 +30,14 @@ class FoodListingSerializer(serializers.ModelSerializer):
         allow_null=True
     )
 
+    receiver = serializers.SerializerMethodField()
+
+    def get_receiver(self, obj):
+        donation = obj.donations.first()
+        if donation:
+            return UserSerializer(donation.receiver_id).data
+        return None
+
     class Meta:
         model = FoodListing
         fields = [
@@ -49,8 +57,28 @@ class FoodListingSerializer(serializers.ModelSerializer):
             'created_at',
             'latitude',
             'longitude',
+            'receiver',
         ]
         read_only_fields = ['id', 'user', 'user_id', 'status', 'created_at']
+
+class DonationSerializer(serializers.ModelSerializer):
+    food_listing = FoodListingSerializer(source='food_id', read_only=True)
+    donor = UserSerializer(source='donor_id', read_only=True)
+    receiver = UserSerializer(source='receiver_id', read_only=True)
+
+    class Meta:
+        model = Donation
+        fields = ['id', 'food_listing', 'donor', 'receiver', 'created_at']
+
+class FeedbackSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Feedback
+        fields = ['id', 'rating', 'comment', 'food_id', 'created_at']
+
+    def validate_rating(self, value):
+        if value < 1 or value > 5:
+            raise serializers.ValidationError("Rating must be between 1 and 5.")
+        return value
 
 class SignupSerializer(serializers.Serializer):
     fullName = serializers.CharField(max_length=255)

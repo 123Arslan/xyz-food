@@ -23,7 +23,7 @@ const ProtectedRoute = ({ children, allowedRole }) => {
       return <Navigate to="/receiver-dashboard" replace />;
     }
     if (isAdmin) {
-      return <Navigate to="/admin" replace />;
+      return <Navigate to="/admin-dashboard" replace />;
     }
     return <Navigate to="/" replace />;
   }
@@ -34,7 +34,7 @@ const ProtectedRoute = ({ children, allowedRole }) => {
       return <Navigate to="/donor-dashboard" replace />;
     }
     if (isAdmin) {
-      return <Navigate to="/admin" replace />;
+      return <Navigate to="/admin-dashboard" replace />;
     }
     return <Navigate to="/" replace />;
   }

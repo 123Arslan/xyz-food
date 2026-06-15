@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { getFoodListings, createFoodListing, updateFoodListing, deleteFoodListing } from '../api';
+import { getFoodListings, createFoodListing, updateFoodListing, deleteFoodListing, completeTransaction } from '../api';
 import { useAuth } from '../AuthContext';
 
 /* ── Form state uses snake_case keys matching Django model attributes directly ── */
@@ -240,6 +240,22 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
       loadFoodListings();
     } else {
       setStatusMessage('Failed to delete listing.');
+      setStatusType('error');
+    }
+  };
+
+  const handleCompleteTransaction = async (foodId) => {
+    if (!window.confirm('Mark this transaction as completed?')) return;
+    setStatusMessage('Completing transaction...');
+    setStatusType('success');
+    const response = await completeTransaction(foodId);
+    if (response.success) {
+      setStatusMessage('Transaction marked as completed.');
+      setStatusType('success');
+      loadFoodListings();
+    } else {
+      const errMsg = response.error?.error || response.error?.detail || 'Failed to complete transaction.';
+      setStatusMessage(errMsg);
       setStatusType('error');
     }
   };
@@ -533,7 +549,19 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
                 <tbody className="divide-y divide-gray-200">
                   {foodListings.map((listing) => (
                     <tr key={listing.id} className="bg-white transition duration-200 hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium text-gray-900">{listing.food_title}</td>
+                      <td className="px-4 py-3 font-medium text-gray-900">
+                        <div>{listing.food_title}</div>
+                        {listing.status === 'Pending' && listing.receiver && (
+                          <div style={{ marginTop: '0.25rem', backgroundColor: '#eff6ff', padding: '0.5rem', borderRadius: '0.5rem', border: '1px solid #dbeafe', fontSize: '0.75rem', color: '#1e40af' }}>
+                            <div style={{ fontWeight: 'bold' }}>Claimed By:</div>
+                            <div>👤 {listing.receiver.profile?.full_name || listing.receiver.email}</div>
+                            <div>📞 Phone: {listing.receiver.profile?.contact_phone || 'N/A'}</div>
+                            {listing.receiver.profile?.instructions && (
+                              <div>📝 Notes: {listing.receiver.profile.instructions}</div>
+                            )}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-gray-700">{listing.food_type}</td>
                       <td className="px-4 py-3 text-gray-700">{new Date(listing.pickup_time).toLocaleString()}</td>
                       <td className="px-4 py-3 text-gray-700">{listing.expiry_time ? new Date(listing.expiry_time).toLocaleString() : '–'}</td>
@@ -543,8 +571,8 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
                           className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
                             listing.status === 'Available'
                               ? 'bg-emerald-100 text-emerald-700'
-                              : listing.status === 'Claimed'
-                              ? 'bg-yellow-100 text-yellow-700'
+                              : listing.status === 'Pending'
+                              ? 'bg-amber-100 text-amber-700'
                               : 'bg-gray-100 text-gray-700'
                           }`}
                         >
@@ -553,6 +581,15 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-2">
+                          {listing.status === 'Pending' && (
+                            <button
+                              type="button"
+                              className="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700 transition duration-200 hover:bg-blue-100"
+                              onClick={() => handleCompleteTransaction(listing.id)}
+                            >
+                              Mark as Completed
+                            </button>
+                          )}
                           <button
                             type="button"
                             className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition duration-200 hover:bg-emerald-100"

@@ -38,7 +38,7 @@ const Login = () => {
       } else if (data.is_receiver) {
         navigate('/receiver-dashboard');
       } else if (data.is_admin) {
-        navigate('/admin');
+        navigate('/admin-dashboard');
       } else {
         navigate('/');
       }
