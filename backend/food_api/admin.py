@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Profile, FoodItem, FoodListing, Donation, Feedback
+from .models import Profile, FoodItem, FoodListing, Donation, Feedback, Message
 
 class ProfileAdmin(admin.ModelAdmin):
     list_display = ('user', 'full_name', 'account_type', 'contact_phone', 'created_at')
@@ -30,4 +30,10 @@ admin.site.register(Profile, ProfileAdmin)
 admin.site.register(FoodItem, FoodItemAdmin)
 admin.site.register(FoodListing, FoodListingAdmin)
 admin.site.register(Donation, DonationAdmin)
+class MessageAdmin(admin.ModelAdmin):
+    list_display = ('id', 'sender', 'receiver', 'food_listing', 'timestamp')
+    list_filter = ('timestamp',)
+    search_fields = ('message_text', 'sender__email', 'receiver__email', 'food_listing__food_title')
+
 admin.site.register(Feedback, FeedbackAdmin)
+admin.site.register(Message, MessageAdmin)

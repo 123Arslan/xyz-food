@@ -1,91 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import './ReceiverDashboard.css';
 import './Home.css';
 import { claimFood, completeTransaction, getMyClaims } from './api';
+import ChatWindow from './components/ChatWindow';
 
-// ─── Mock Data ───────────────────────────────────────────────
+// ─── Constants ──────────────────────────────────────────────
 const CITIES = ['Lahore', 'Karachi', 'Islamabad', 'Rawalpindi', 'Faisalabad', 'Multan'];
 
-const INITIAL_FOOD_ITEMS = [
-  {
-    id: 1,
-    name: 'Chicken Biryani',
-    type: 'Cooked Meal',
-    donor: 'Al-Madina Restaurant',
-    quantity: '15 servings',
-    timeLeft: '2 hrs left',
-    image: 'https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=400&q=80',
-  },
-  {
-    id: 2,
-    name: 'Fresh Vegetables Pack',
-    type: 'Raw Ingredients',
-    donor: 'Green Farm Market',
-    quantity: '10 packs',
-    timeLeft: '5 hrs left',
-    image: 'https://images.unsplash.com/photo-1540420773420-3366772f4999?auto=format&fit=crop&w=400&q=80',
-  },
-  {
-    id: 3,
-    name: 'Assorted Bakery Items',
-    type: 'Baked Goods',
-    donor: 'City Bakery',
-    quantity: '20 pieces',
-    timeLeft: '3 hrs left',
-    image: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=400&q=80',
-  },
-  {
-    id: 4,
-    name: 'Canned Food Bundle',
-    type: 'Packaged Food',
-    donor: 'Hope Foundation',
-    quantity: '8 bundles',
-    timeLeft: '12 hrs left',
-    image: 'https://images.unsplash.com/photo-1584568694244-14fbdf83bd30?auto=format&fit=crop&w=400&q=80',
-  },
-  {
-    id: 5,
-    name: 'Dal Chawal',
-    type: 'Cooked Meal',
-    donor: 'Saylani Welfare',
-    quantity: '25 servings',
-    timeLeft: '1 hr left',
-    image: 'https://images.unsplash.com/photo-1596797038530-2c107229654b?auto=format&fit=crop&w=400&q=80',
-  },
-  {
-    id: 6,
-    name: 'Fruit Basket',
-    type: 'Raw Ingredients',
-    donor: 'FreshCo Mart',
-    quantity: '12 baskets',
-    timeLeft: '8 hrs left',
-    image: 'https://images.unsplash.com/photo-1619566636858-adf3ef46400b?auto=format&fit=crop&w=400&q=80',
-  },
-];
-
-const INITIAL_CLAIMS = [
-  {
-    id: 101,
-    name: 'Naan & Curry Pack',
-    donor: 'Karachi Foods',
-    status: 'Ready for Pickup',
-    icon: '🥘',
-    rating: 0,
-    feedbackSubmitted: false,
-  },
-  {
-    id: 102,
-    name: 'Rice Bags (5kg)',
-    donor: 'Edhi Foundation',
-    status: 'Completed',
-    icon: '🍚',
-    rating: 4,
-    feedbackSubmitted: true,
-  },
-];
-
-// ─── Helper: food type → CSS class ──────────────────────────
+// ─── Helper Functions ──────────────────────────────────────
 const getFoodTypeClass = (type) => {
   if (!type) return 'food-type-cooked';
   switch (type.toLowerCase()) {
@@ -136,6 +59,16 @@ const getFoodIcon = (type) => {
   }
 };
 
+const formatDate = (dateStr) => {
+  if (!dateStr) return 'N/A';
+  try {
+    const d = new Date(dateStr);
+    return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch (e) {
+    return dateStr;
+  }
+};
+
 // ─── Star Rating Component ──────────────────────────────────
 const StarRating = ({ rating, onRate, disabled }) => {
   const [hoverIndex, setHoverIndex] = useState(0);
@@ -160,15 +93,20 @@ const StarRating = ({ rating, onRate, disabled }) => {
   );
 };
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 // ─── RECEIVER DASHBOARD ─────────────────────────────────────
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
 const ReceiverDashboard = () => {
-  const [selectedCity, setSelectedCity] = useState('Lahore');
+  // ─── State ──────────────────────────────────────────────
+  const [selectedCity, setSelectedCity] = useState(() => {
+    return localStorage.getItem('receiverCity') || 'Lahore';
+  });
   const [foodItems, setFoodItems] = useState([]);
   const [claims, setClaims] = useState([]);
   const [toast, setToast] = useState(null);
   const [activeTab, setActiveTab] = useState('food');
+  const [claimingId, setClaimingId] = useState(null);
+  const [loadingClaims, setLoadingClaims] = useState(false);
 
   // Feedback states
   const [feedbackFoodId, setFeedbackFoodId] = useState(null);
@@ -186,7 +124,9 @@ const ReceiverDashboard = () => {
   // Coordinates States
   const [userLatitude, setUserLatitude] = useState(null);
   const [userLongitude, setUserLongitude] = useState(null);
+  const [chatTarget, setChatTarget] = useState(null);
 
+  // ─── Effects ─────────────────────────────────────────────
   // Toast auto-dismiss
   useEffect(() => {
     if (toast) {
@@ -195,7 +135,12 @@ const ReceiverDashboard = () => {
     }
   }, [toast]);
 
-  // Request browser geolocation on mount, fallback to IP geolocation
+  // Save city to localStorage
+  useEffect(() => {
+    localStorage.setItem('receiverCity', selectedCity);
+  }, [selectedCity]);
+
+  // Request browser geolocation on mount
   useEffect(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -220,7 +165,16 @@ const ReceiverDashboard = () => {
     }
   }, []);
 
-  // Fetch food listings from backend
+  // Fetch data on filter changes
+  useEffect(() => {
+    fetchAvailableFood();
+  }, [searchLocation, foodType, userLatitude, userLongitude]);
+
+  useEffect(() => {
+    fetchMyClaims();
+  }, [activeTab]);
+
+  // ─── API Calls ───────────────────────────────────────────
   const fetchAvailableFood = async () => {
     setIsLoading(true);
     setErrorMsg('');
@@ -244,43 +198,34 @@ const ReceiverDashboard = () => {
   };
 
   const fetchMyClaims = async () => {
-    const response = await getMyClaims();
-    if (response.success) {
-      const mappedClaims = response.data.map(donation => {
-        const listing = donation.food_listing || {};
-        const donorUser = donation.donor || {};
-        const donorProfile = donorUser.profile || {};
-        return {
-          id: donation.id,
-          foodId: listing.id,
-          name: listing.food_title || 'Food Item',
-          donor: donorProfile.full_name || donorUser.username || 'Donor',
-          donorPhone: donorProfile.contact_phone || listing.contact_phone || 'N/A',
-          donorInstructions: donorProfile.instructions || listing.description || 'No instructions provided.',
-          status: listing.status,
-          icon: getFoodIcon(listing.food_type),
-          rating: 0,
-          feedbackSubmitted: false,
-        };
-      });
-      setClaims(mappedClaims);
-    }
-  };
-
-  // Trigger automatic fetch on filter inputs or coordinates change
-  useEffect(() => {
-    fetchAvailableFood();
-    fetchMyClaims();
-  }, [searchLocation, foodType, userLatitude, userLongitude, activeTab]);
-
-  // Date formatter helper
-  const formatDate = (dateStr) => {
-    if (!dateStr) return 'N/A';
+    setLoadingClaims(true);
     try {
-      const d = new Date(dateStr);
-      return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-    } catch (e) {
-      return dateStr;
+      const response = await getMyClaims();
+      if (response.success) {
+        const mappedClaims = response.data.map(donation => {
+          const listing = donation.food_listing || {};
+          const donorUser = donation.donor || {};
+          const donorProfile = donorUser.profile || {};
+          return {
+            id: donation.id,
+            foodId: listing.id,
+            name: listing.food_title || 'Food Item',
+            donor: donorProfile.full_name || donorUser.username || 'Donor',
+            donorId: donorUser.id,
+            donorPhone: donorProfile.contact_phone || listing.contact_phone || 'N/A',
+            donorInstructions: donorProfile.instructions || listing.description || 'No instructions provided.',
+            status: listing.status || 'Pending',
+            icon: getFoodIcon(listing.food_type),
+            rating: 0,
+            feedbackSubmitted: false,
+          };
+        });
+        setClaims(mappedClaims);
+      }
+    } catch (err) {
+      console.error('Error fetching claims:', err);
+    } finally {
+      setLoadingClaims(false);
     }
   };
 
@@ -292,35 +237,49 @@ const ReceiverDashboard = () => {
   const mealsClaimed = claims.filter(c => c.status !== 'Completed').length;
   const mealsFed = claims.filter(c => c.status === 'Completed').length;
 
-  // ─── Claim a food item ────────────────────────────────────
+  // ─── Handlers ─────────────────────────────────────────────
   const handleClaim = async (foodId) => {
-    const item = foodItems.find(f => f.id === foodId);
-    if (!item) return;
+    setClaimingId(foodId);
+    try {
+      const item = foodItems.find(f => f.id === foodId);
+      if (!item) {
+        setToast({ icon: '❌', message: 'Food item not found.' });
+        return;
+      }
 
-    const response = await claimFood(foodId);
-    if (response.success) {
-      setToast({ icon: '✅', message: `"${item.food_title || item.name}" claimed successfully!` });
-      fetchAvailableFood();
-      fetchMyClaims();
-    } else {
-      const errMsg = response.error?.error || response.error?.detail || 'Failed to claim food.';
-      setToast({ icon: '❌', message: errMsg });
+      const response = await claimFood(foodId);
+      if (response.success) {
+        setToast({ icon: '✅', message: `"${item.food_title || item.name}" claimed successfully!` });
+        await fetchAvailableFood();
+        await fetchMyClaims();
+      } else {
+        const errMsg = response.error?.error || response.error?.detail || 'Failed to claim food.';
+        setToast({ icon: '❌', message: errMsg });
+      }
+    } catch (err) {
+      setToast({ icon: '❌', message: 'An error occurred while claiming.' });
+    } finally {
+      setClaimingId(null);
     }
   };
 
   const handleCompleteTransaction = async (foodId) => {
-    const response = await completeTransaction(foodId);
-    if (response.success) {
-      setToast({ icon: '✅', message: 'Transaction marked as completed!' });
-      fetchMyClaims();
-      // Open the feedback modal
-      setFeedbackFoodId(foodId);
-      setFeedbackRating(0);
-      setFeedbackComment('');
-      setShowFeedbackSuccess(false);
-    } else {
-      const errMsg = response.error?.error || response.error?.detail || 'Failed to complete transaction.';
-      setToast({ icon: '❌', message: errMsg });
+    try {
+      const response = await completeTransaction(foodId);
+      if (response.success) {
+        setToast({ icon: '✅', message: 'Transaction marked as completed!' });
+        await fetchMyClaims();
+        // Open the feedback modal
+        setFeedbackFoodId(foodId);
+        setFeedbackRating(0);
+        setFeedbackComment('');
+        setShowFeedbackSuccess(false);
+      } else {
+        const errMsg = response.error?.error || response.error?.detail || 'Failed to complete transaction.';
+        setToast({ icon: '❌', message: errMsg });
+      }
+    } catch (err) {
+      setToast({ icon: '❌', message: 'An error occurred.' });
     }
   };
 
@@ -353,7 +312,6 @@ const ReceiverDashboard = () => {
     }
   };
 
-  // ─── Mark as Picked Up ────────────────────────────────────
   const handlePickup = (claimId) => {
     setClaims(prev =>
       prev.map(c =>
@@ -363,7 +321,6 @@ const ReceiverDashboard = () => {
     setToast({ icon: '📦', message: 'Marked as picked up! Please leave your feedback.' });
   };
 
-  // ─── Submit Rating ────────────────────────────────────────
   const handleRate = (claimId, stars) => {
     setClaims(prev =>
       prev.map(c =>
@@ -381,12 +338,10 @@ const ReceiverDashboard = () => {
     setToast({ icon: '⭐', message: 'Thank you for your feedback!' });
   };
 
-  // ─── Navigation Handlers (for footer links) ───────────────
   const handleNavigation = (section) => {
     setToast({ icon: '🔗', message: `Navigating to ${section}...` });
   };
 
-  // ─── Get status CSS class ─────────────────────────────────
   const getStatusClass = (status) => {
     switch (status) {
       case 'Pending': return 'claim-status-pending';
@@ -397,62 +352,41 @@ const ReceiverDashboard = () => {
     }
   };
 
-  // ═══════════════════════════════════════════════════════════
-  // ─── RENDER: Food List ────────────────────────────────────
-  // ═══════════════════════════════════════════════════════════
+  // ─── Render Functions ────────────────────────────────────
   const renderFoodList = () => (
     <div className="receiver-section">
       {/* Search and Filter Section */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-150 p-6 mb-8">
-        <div className="flex flex-col md:flex-row md:items-end gap-4">
-          {/* Search Location Input */}
-          <div className="flex-1">
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-              Search Location
-            </label>
-            <div className="relative">
-              <span className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                📍
-              </span>
-              <input
-                type="text"
-                value={searchLocation}
-                onChange={(e) => setSearchLocation(e.target.value)}
-                placeholder="Enter pickup location or city..."
-                className="w-full pl-9 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all duration-200"
-              />
-            </div>
+      <div className="search-filter-card">
+        <div className="search-filter-inner">
+          <div className="search-filter-field">
+            <label className="search-filter-label">📍 Search Location</label>
+            <input
+              type="text"
+              value={searchLocation}
+              onChange={(e) => setSearchLocation(e.target.value)}
+              placeholder="Enter pickup location or city..."
+              className="search-filter-input"
+            />
           </div>
 
-          {/* Food Type Filter Dropdown */}
-          <div className="w-full md:w-64">
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
-              Food Type
-            </label>
-            <div className="relative">
-              <select
-                value={foodType}
-                onChange={(e) => setFoodType(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-gray-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all duration-200"
-              >
-                <option value="All">All Food Types</option>
-                <option value="Veg">Veg</option>
-                <option value="Non-Veg">Non-Veg</option>
-                <option value="Cooked Food">Cooked Food</option>
-                <option value="Dry Rations">Dry Rations</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Search Action Button */}
-          <div className="w-full md:w-auto">
-            <button
-              onClick={fetchAvailableFood}
-              className="w-full md:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl shadow-sm hover:shadow transition-all duration-200 flex items-center justify-center gap-2"
+          <div className="search-filter-field">
+            <label className="search-filter-label">🍽️ Food Type</label>
+            <select
+              value={foodType}
+              onChange={(e) => setFoodType(e.target.value)}
+              className="search-filter-select"
             >
-              <span>🔍</span> Search
-            </button>
+              <option value="All">All Food Types</option>
+              <option value="Veg">Veg</option>
+              <option value="Non-Veg">Non-Veg</option>
+              <option value="Cooked Food">Cooked Food</option>
+              <option value="Dry Rations">Dry Rations</option>
+            </select>
           </div>
+
+          <button onClick={fetchAvailableFood} className="search-filter-btn">
+            🔍 Search
+          </button>
         </div>
       </div>
 
@@ -465,114 +399,99 @@ const ReceiverDashboard = () => {
       </div>
 
       {isLoading ? (
-        <div className="flex flex-col items-center justify-center py-16">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-emerald-500 mb-4"></div>
-          <p className="text-gray-500 font-medium">Loading food listings...</p>
+        <div className="loading-state">
+          <div className="loading-spinner"></div>
+          <p>Loading food listings...</p>
         </div>
       ) : errorMsg ? (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-center my-6">
-          {errorMsg}
-        </div>
+        <div className="error-state">{errorMsg}</div>
       ) : foodItems.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="receiver-food-grid">
           {foodItems.map(item => (
-            <div className="bg-white rounded-2xl overflow-hidden border border-gray-150 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col group hover:-translate-y-1" key={item.id}>
-              {/* Image Header with Badge */}
-              <div className="relative h-48 w-full bg-gray-50 overflow-hidden border-b border-gray-100">
+            <div className="food-item-card" key={item.id}>
+              <div className="food-item-image-wrapper">
                 {item.food_image_url ? (
                   <img
                     src={item.food_image_url}
                     alt={item.food_title}
-                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                    className="food-item-image"
                     onError={(e) => {
                       e.target.onerror = null;
-                      e.target.src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80"; // fallback
+                      e.target.src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80";
                     }}
                   />
                 ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 bg-gradient-to-br from-emerald-50 to-teal-50">
-                    <span className="text-4xl mb-2">🍛</span>
-                    <span className="text-xs font-semibold uppercase tracking-wider text-emerald-600/70">No Image</span>
+                  <div className="food-item-no-image">
+                    <span className="food-item-no-image-icon">🍛</span>
+                    <span>No Image</span>
                   </div>
                 )}
-                {/* Food Type Badge */}
-                <div className="absolute top-4 left-4">
-                  <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider shadow-sm ${
-                    item.food_type === 'Veg' ? 'bg-green-100 text-green-800' :
-                    item.food_type === 'Non-Veg' ? 'bg-red-100 text-red-800' :
-                    item.food_type === 'Cooked' ? 'bg-amber-100 text-amber-800' :
-                    'bg-blue-100 text-blue-800'
-                  }`}>
-                    {item.food_type === 'Cooked' ? 'Cooked Food' : item.food_type === 'Dry' ? 'Dry Rations' : item.food_type}
-                  </span>
+                <span className={`food-item-badge ${
+                  item.food_type === 'Veg' ? 'badge-veg' :
+                  item.food_type === 'Non-Veg' ? 'badge-nonveg' :
+                  item.food_type === 'Cooked' ? 'badge-cooked' :
+                  'badge-other'
+                }`}>
+                  {item.food_type === 'Cooked' ? 'Cooked Food' : 
+                   item.food_type === 'Dry' ? 'Dry Rations' : 
+                   item.food_type || 'Food'}
+                </span>
+              </div>
+
+              <div className="food-item-content">
+                <h3 className="food-item-title">{item.food_title}</h3>
+                <p className="food-item-description">{item.description || "No description provided."}</p>
+                
+                <div className="food-item-details">
+                  <div className="food-item-detail">
+                    <span className="food-item-detail-label">Quantity</span>
+                    <span className="food-item-detail-value">📦 {item.quantity}</span>
+                  </div>
+                  <div className="food-item-detail">
+                    <span className="food-item-detail-label">Contact</span>
+                    <span className="food-item-detail-value">📞 {item.contact_phone}</span>
+                  </div>
+                </div>
+
+                <div className="food-item-location">
+                  <span className="food-item-location-label">Pickup Location</span>
+                  <p className="food-item-location-text">📍 {item.pickup_location}</p>
+                </div>
+
+                <div className="food-item-times">
+                  <div className="food-item-time">
+                    <span>Pickup:</span>
+                    <span className="food-item-time-value">{formatDate(item.pickup_time)}</span>
+                  </div>
+                  <div className="food-item-time">
+                    <span>Expiry:</span>
+                    <span className="food-item-time-expiry">{formatDate(item.expiry_time)}</span>
+                  </div>
                 </div>
               </div>
 
-              {/* Card Body */}
-              <div className="p-5 flex-1 flex flex-col justify-between">
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900 mb-2 line-clamp-1">{item.food_title}</h3>
-                  <p className="text-sm text-gray-500 mb-4 line-clamp-2">{item.description || "No description provided."}</p>
-                  
-                  {/* Qty & Contact */}
-                  <div className="grid grid-cols-2 gap-3 mb-4 bg-gray-50 p-3 rounded-xl border border-gray-100">
-                    <div>
-                      <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Quantity</span>
-                      <span className="text-sm font-bold text-gray-700">📦 {item.quantity}</span>
-                    </div>
-                    <div>
-                      <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Contact Phone</span>
-                      <span className="text-sm font-bold text-gray-700">📞 {item.contact_phone}</span>
-                    </div>
-                  </div>
-
-                  {/* Pickup Location */}
-                  <div className="mb-4">
-                    <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Pickup Location</span>
-                    <p className="text-sm text-gray-600 flex items-start gap-1">
-                      <span className="mt-0.5">📍</span>
-                      <span className="line-clamp-2">{item.pickup_location}</span>
-                    </p>
-                  </div>
-                </div>
-
-                {/* Card Footer: Times & Claim Button */}
-                <div className="pt-4 border-t border-gray-100 mt-auto">
-                  <div className="flex flex-col gap-1.5 mb-4 text-xs text-gray-500">
-                    <div className="flex justify-between">
-                      <span>Pickup Time:</span>
-                      <span className="font-semibold text-gray-700">{formatDate(item.pickup_time)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Expiry Time:</span>
-                      <span className="font-semibold text-red-600">{formatDate(item.expiry_time)}</span>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => handleClaim(item.id)}
-                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl transition-all duration-200 shadow-sm hover:shadow text-center flex items-center justify-center gap-2"
-                  >
-                    Claim Food
-                  </button>
-                </div>
+              <div className="food-item-footer">
+                <button
+                  onClick={() => handleClaim(item.id)}
+                  disabled={claimingId === item.id}
+                  className="food-item-claim-btn"
+                >
+                  {claimingId === item.id ? '⏳ Claiming...' : '🍽️ Claim Food'}
+                </button>
               </div>
             </div>
           ))}
         </div>
       ) : (
-        <div className="flex flex-col items-center justify-center py-16 bg-white border border-gray-100 rounded-2xl text-center p-8">
-          <div className="text-5xl mb-4">🔍</div>
-          <h3 className="text-lg font-bold text-gray-800 mb-1">No available food listings found</h3>
-          <p className="text-gray-500 max-w-sm">No available food listings found at the moment.</p>
+        <div className="empty-state">
+          <div className="empty-state-icon">🔍</div>
+          <h3 className="empty-state-title">No available food listings found</h3>
+          <p className="empty-state-text">Try adjusting your search filters or check back later.</p>
         </div>
       )}
     </div>
   );
 
-  // ═══════════════════════════════════════════════════════════
-  // ─── RENDER: My Claims ────────────────────────────────────
-  // ═══════════════════════════════════════════════════════════
   const renderMyClaims = () => (
     <div className="receiver-section">
       <div className="receiver-section-header">
@@ -583,27 +502,54 @@ const ReceiverDashboard = () => {
         <span className="receiver-section-subtitle">{claims.length} total</span>
       </div>
 
-      {claims.length > 0 ? (
-        <div className="claims-list">
+      {loadingClaims ? (
+        <div className="loading-state">
+          <div className="loading-spinner"></div>
+          <p>Loading your claims...</p>
+        </div>
+      ) : claims.length > 0 ? (
+        <div className="claims-grid">
           {claims.map(claim => (
-            <div className="claim-card" key={claim.id}>
-              <div className="claim-card-icon">{claim.icon}</div>
-              <div className="claim-card-info">
-                <h4 className="claim-card-name">{claim.name}</h4>
-                <p className="claim-card-donor">From: {claim.donor}</p>
+            <div key={claim.id} className="claim-card">
+              <div className="claim-card-header">
+                <div className="claim-card-icon-wrapper">
+                  <span className="claim-card-icon">{claim.icon}</span>
+                </div>
+                <div className="claim-card-info">
+                  <h4 className="claim-card-name">{claim.name}</h4>
+                  <p className="claim-card-donor">From: {claim.donor}</p>
+                </div>
+                <span className={`claim-status ${getStatusClass(claim.status)}`}>
+                  <span className="claim-status-dot"></span>
+                  {claim.status}
+                </span>
+              </div>
 
+              <div className="claim-card-body">
                 {claim.status === 'Pending' && (
-                  <div style={{ marginTop: '0.5rem', backgroundColor: '#f0fdf4', padding: '0.75rem', borderRadius: '0.75rem', border: '1px solid #dcfce7', fontSize: '0.75rem', color: '#374151' }}>
-                    <div style={{ fontWeight: 'bold', color: '#166534', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '0.625rem', marginBottom: '0.25rem' }}>Coordination Details</div>
-                    <div style={{ marginBottom: '0.125rem' }}>📞 <strong>Contact Phone:</strong> {claim.donorPhone}</div>
-                    <div>📝 <strong>Donor Instructions:</strong> {claim.donorInstructions}</div>
+                  <div className="claim-coordination">
+                    <h5>Coordination Details</h5>
+                    <p>📞 <strong>Contact:</strong> {claim.donorPhone}</p>
+                    <p>📝 <strong>Instructions:</strong> {claim.donorInstructions}</p>
+                    {claim.donorId && (
+                      <button
+                        className="claim-chat-btn"
+                        onClick={() => setChatTarget({
+                          listingId: claim.foodId,
+                          receiverId: claim.donorId,
+                          otherUserName: claim.donor,
+                          listingTitle: claim.name,
+                        })}
+                      >
+                        💬 Message Donor
+                      </button>
+                    )}
                   </div>
                 )}
 
-                {/* Show star rating + feedback ONLY after Picked Up */}
                 {claim.status === 'Picked Up' && !claim.feedbackSubmitted && (
-                  <div className="feedback-row">
-                    <span className="feedback-label">Rate your experience:</span>
+                  <div className="claim-feedback">
+                    <span className="claim-feedback-label">Rate your experience:</span>
                     <StarRating
                       rating={claim.rating}
                       onRate={(stars) => handleRate(claim.id, stars)}
@@ -611,7 +557,7 @@ const ReceiverDashboard = () => {
                     />
                     {claim.rating > 0 && (
                       <button
-                        className="feedback-submit-btn"
+                        className="claim-feedback-submit"
                         onClick={() => handleSubmitFeedback(claim.id)}
                       >
                         Submit Feedback
@@ -620,60 +566,59 @@ const ReceiverDashboard = () => {
                   </div>
                 )}
 
-                {/* Show submitted feedback */}
                 {claim.feedbackSubmitted && (
-                  <div className="feedback-row">
-                    <div className="feedback-submitted">
-                      <span>✅</span> Feedback submitted — {claim.rating}/5 stars
-                    </div>
+                  <div className="claim-feedback-submitted">
+                    <span>✅</span> Feedback submitted — {claim.rating}/5 stars
                   </div>
                 )}
-              </div>
 
-              <div className="claim-card-right">
-                <span className={`claim-status ${getStatusClass(claim.status)}`}>
-                  <span className="claim-status-dot"></span>
-                  {claim.status}
-                </span>
+                <div className="claim-actions">
+                  {claim.status === 'Pending' && claim.donorId && (
+                    <button
+                      className="claim-action-btn claim-action-chat"
+                      onClick={() => setChatTarget({
+                        listingId: claim.foodId,
+                        receiverId: claim.donorId,
+                        otherUserName: claim.donor,
+                        listingTitle: claim.name,
+                      })}
+                    >
+                      💬 Chat Now
+                    </button>
+                  )}
 
-                {claim.status === 'Pending' && (
-                  <button
-                    className="claim-action-btn"
-                    style={{ backgroundColor: '#059669', color: '#ffffff', border: 'none', cursor: 'pointer', transition: 'background-color 0.2s' }}
-                    onMouseEnter={(e) => e.target.style.backgroundColor = '#047857'}
-                    onMouseLeave={(e) => e.target.style.backgroundColor = '#059669'}
-                    onClick={() => handleCompleteTransaction(claim.foodId)}
-                  >
-                    Mark as Completed
-                  </button>
-                )}
+                  {claim.status === 'Pending' && (
+                    <button
+                      className="claim-action-btn claim-action-complete"
+                      onClick={() => handleCompleteTransaction(claim.foodId)}
+                    >
+                      ✅ Mark as Completed
+                    </button>
+                  )}
 
-                {/* Show "Picked Up" button for Ready for Pickup & Pending */}
-                {(claim.status === 'Pending' || claim.status === 'Ready for Pickup') && (
-                  <button
-                    className="claim-action-btn claim-pickup-btn"
-                    onClick={() => handlePickup(claim.id)}
-                  >
-                    Picked Up
-                  </button>
-                )}
+                  {(claim.status === 'Pending' || claim.status === 'Ready for Pickup') && (
+                    <button
+                      className="claim-action-btn claim-action-pickup"
+                      onClick={() => handlePickup(claim.id)}
+                    >
+                      📦 Picked Up
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ))}
         </div>
       ) : (
-        <div className="food-empty-state">
-          <div className="food-empty-icon">📭</div>
-          <h3 className="food-empty-title">No claims yet</h3>
-          <p className="food-empty-text">Browse available food and claim what you need.</p>
+        <div className="empty-state">
+          <div className="empty-state-icon">📭</div>
+          <h3 className="empty-state-title">No claims yet</h3>
+          <p className="empty-state-text">Browse available food and claim what you need.</p>
         </div>
       )}
     </div>
   );
 
-  // ═══════════════════════════════════════════════════════════
-  // ─── RENDER: Help Section ─────────────────────────────────
-  // ═══════════════════════════════════════════════════════════
   const renderHelp = () => (
     <div className="receiver-section">
       <div className="receiver-section-header">
@@ -684,7 +629,6 @@ const ReceiverDashboard = () => {
       </div>
 
       <div className="help-grid">
-        {/* Nearest Mosque */}
         <div className="help-card help-card-mosque">
           <div className="help-card-icon">🕌</div>
           <h3 className="help-card-title">Nearest Mosque</h3>
@@ -693,15 +637,14 @@ const ReceiverDashboard = () => {
             {selectedCity}
           </p>
           <button className="help-card-btn help-btn-mosque">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="10" r="3"></circle>
-              <path d="M12 21.7C17.3 17 20 13 20 10a8 8 0 1 0-16 0c0 3 2.7 7 8 11.7z"></path>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="10" r="3"/>
+              <path d="M12 21.7C17.3 17 20 13 20 10a8 8 0 1 0-16 0c0 3 2.7 7 8 11.7z"/>
             </svg>
             Get Directions
           </button>
         </div>
 
-        {/* Helpline */}
         <div className="help-card help-card-helpline">
           <div className="help-card-icon">📞</div>
           <h3 className="help-card-title">Helpline</h3>
@@ -713,14 +656,13 @@ const ReceiverDashboard = () => {
             className="help-card-btn help-btn-helpline"
             onClick={() => setToast({ icon: '📞', message: 'Calling helpline...' })}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"></path>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
             </svg>
             Call Now
           </button>
         </div>
 
-        {/* Volunteer */}
         <div className="help-card help-card-volunteer">
           <div className="help-card-icon">🙋</div>
           <h3 className="help-card-title">Call a Volunteer</h3>
@@ -732,11 +674,11 @@ const ReceiverDashboard = () => {
             className="help-card-btn help-btn-volunteer"
             onClick={() => setToast({ icon: '🙋', message: 'Connecting you with a volunteer...' })}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-              <circle cx="9" cy="7" r="4"></circle>
-              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
             </svg>
             Request Volunteer
           </button>
@@ -745,16 +687,12 @@ const ReceiverDashboard = () => {
     </div>
   );
 
-  // ═══════════════════════════════════════════════════════════
-  // ─── MAIN RENDER ──────────────────────────────────────────
-  // ═══════════════════════════════════════════════════════════
+  // ─── Main Render ──────────────────────────────────────────
   return (
-    <div className="receiver-dashboard-page" style={{ background: '#f8fafc', minHeight: '100vh', fontFamily: "'Inter', 'Segoe UI', sans-serif" }}>
-
+    <div className="receiver-dashboard-page">
       {/* ─── Hero Header ─── */}
       <div className="receiver-hero">
         <div className="receiver-hero-inner">
-          {/* Profile Row */}
           <div className="rh-profile-row">
             <div className="rh-profile-left">
               <img
@@ -771,20 +709,19 @@ const ReceiverDashboard = () => {
               </div>
             </div>
             <button className="rh-bell" title="Notifications">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
               </svg>
               <span className="rh-bell-dot"></span>
             </button>
           </div>
 
-          {/* City Selector */}
           <div className="rh-city-row">
             <span className="rh-city-label">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="10" r="3"></circle>
-                <path d="M12 21.7C17.3 17 20 13 20 10a8 8 0 1 0-16 0c0 3 2.7 7 8 11.7z"></path>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="10" r="3"/>
+                <path d="M12 21.7C17.3 17 20 13 20 10a8 8 0 1 0-16 0c0 3 2.7 7 8 11.7z"/>
               </svg>
               Your City
             </span>
@@ -792,7 +729,6 @@ const ReceiverDashboard = () => {
               className="rh-city-select"
               value={selectedCity}
               onChange={(e) => setSelectedCity(e.target.value)}
-              id="city-selector"
             >
               {CITIES.map(city => (
                 <option key={city} value={city}>{city}</option>
@@ -800,7 +736,6 @@ const ReceiverDashboard = () => {
             </select>
           </div>
 
-          {/* Tabs */}
           <div className="rh-tabs-row">
             <nav className="rh-tabs">
               {[
@@ -812,7 +747,6 @@ const ReceiverDashboard = () => {
                   key={tab.key}
                   onClick={() => setActiveTab(tab.key)}
                   className={`rh-tab ${activeTab === tab.key ? 'rh-tab-active' : ''}`}
-                  id={`tab-${tab.key}`}
                 >
                   {tab.label}
                 </button>
@@ -824,7 +758,6 @@ const ReceiverDashboard = () => {
 
       {/* ─── Main Content ─── */}
       <div className="receiver-content-area">
-        {/* Stats Cards (always visible) */}
         <div className="receiver-stats-grid">
           <div className="receiver-stat-card rsc-meals-available">
             <div className="rsc-icon-wrap">🍲</div>
@@ -849,7 +782,6 @@ const ReceiverDashboard = () => {
           </div>
         </div>
 
-        {/* Tab content */}
         {activeTab === 'food' && renderFoodList()}
         {activeTab === 'claims' && renderMyClaims()}
         {activeTab === 'help' && renderHelp()}
@@ -863,7 +795,6 @@ const ReceiverDashboard = () => {
               <h2>FOOD DONATION</h2>
               <p>Making a difference in communities by rescuing surplus food and feeding those in need.</p>
             </div>
-
             <div className="footer-col">
               <h3>Quick Links</h3>
               <ul>
@@ -873,7 +804,6 @@ const ReceiverDashboard = () => {
                 <li><button onClick={() => handleNavigation('Contact Us')} className="footer-link-btn">Contact Us</button></li>
               </ul>
             </div>
-
             <div className="footer-col">
               <h3>Support</h3>
               <ul>
@@ -883,7 +813,6 @@ const ReceiverDashboard = () => {
                 <li><button onClick={() => handleNavigation('Terms of Service')} className="footer-link-btn">Terms of Service</button></li>
               </ul>
             </div>
-
             <div className="footer-col contact-col">
               <h3>Contact Us</h3>
               <ul>
@@ -893,7 +822,6 @@ const ReceiverDashboard = () => {
               </ul>
             </div>
           </div>
-
           <div className="footer-bottom">
             <p>&copy; 2026 Food Donation Platform. All rights reserved.</p>
           </div>
@@ -902,45 +830,40 @@ const ReceiverDashboard = () => {
 
       {/* ─── Feedback Modal ─── */}
       {feedbackFoodId !== null && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyCenter: 'center', justifyContent: 'center', padding: '1rem', backgroundColor: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(4px)' }}>
-          <div style={{ backgroundColor: '#ffffff', borderRadius: '1.5rem', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', maxWidth: '28rem', width: '100%', border: '1px solid #f3f4f6', overflow: 'hidden' }}>
+        <div className="feedback-modal-overlay">
+          <div className="feedback-modal">
             {showFeedbackSuccess ? (
-              <div style={{ padding: '2rem', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                <div style={{ width: '4rem', height: '4rem', backgroundColor: '#d1fae5', color: '#059669', borderRadius: '9999px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.875rem', marginBottom: '1rem' }}>
-                  ✨
-                </div>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#111827', marginBottom: '0.5rem' }}>Thank you!</h3>
-                <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>Your feedback has been submitted successfully.</p>
+              <div className="feedback-success">
+                <div className="feedback-success-icon">✨</div>
+                <h3>Thank you!</h3>
+                <p>Your feedback has been submitted successfully.</p>
               </div>
             ) : (
-              <form onSubmit={handleFeedbackSubmit} style={{ padding: '2rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                  <h3 style={{ fontSize: '1.125rem', fontWeight: 'bold', color: '#030712' }}>Share Your Experience</h3>
+              <form onSubmit={handleFeedbackSubmit} className="feedback-form">
+                <div className="feedback-form-header">
+                  <h3>Share Your Experience</h3>
                   <button
                     type="button"
                     onClick={() => setFeedbackFoodId(null)}
-                    style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: '1.25rem' }}
+                    className="feedback-close-btn"
                   >
                     ✕
                   </button>
                 </div>
                 
-                <p style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '1.5rem' }}>
+                <p className="feedback-form-text">
                   Please rate this food donation. Your feedback helps build trust in our community.
                 </p>
                 
-                <div style={{ marginBottom: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-                  <label style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    Rating *
-                  </label>
-                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <div className="feedback-rating-section">
+                  <label className="feedback-rating-label">Rating *</label>
+                  <div className="feedback-stars">
                     {[1, 2, 3, 4, 5].map((star) => (
                       <button
                         key={star}
                         type="button"
                         onClick={() => setFeedbackRating(star)}
-                        style={{ background: 'none', border: 'none', fontSize: '2.25rem', cursor: 'pointer', color: star <= feedbackRating ? '#fbbf24' : '#e5e7eb', transition: 'transform 0.1s' }}
-                        aria-label={`Rate ${star} star${star > 1 ? 's' : ''}`}
+                        className={`feedback-star ${star <= feedbackRating ? 'feedback-star-filled' : ''}`}
                       >
                         ★
                       </button>
@@ -948,31 +871,29 @@ const ReceiverDashboard = () => {
                   </div>
                 </div>
                 
-                <div style={{ marginBottom: '1.5rem' }}>
-                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: '#4b5563', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>
-                    Comment
-                  </label>
+                <div className="feedback-comment-section">
+                  <label className="feedback-comment-label">Comment</label>
                   <textarea
                     rows="3"
                     value={feedbackComment}
                     onChange={(e) => setFeedbackComment(e.target.value)}
                     placeholder="Write a brief comment about the food quality, quantity, packaging..."
-                    style={{ width: '100%', padding: '0.75rem', backgroundColor: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '0.75rem', boxSizing: 'border-box' }}
+                    className="feedback-comment-input"
                   />
                 </div>
                 
-                <div style={{ display: 'flex', gap: '1rem' }}>
+                <div className="feedback-form-actions">
                   <button
                     type="button"
                     onClick={() => setFeedbackFoodId(null)}
-                    style={{ flex: 1, padding: '0.75rem', backgroundColor: '#f3f4f6', border: 'none', borderRadius: '0.75rem', cursor: 'pointer', fontWeight: 'bold', color: '#4b5563' }}
+                    className="feedback-cancel-btn"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={submittingFeedback}
-                    style={{ flex: 1, padding: '0.75rem', backgroundColor: '#059669', color: '#fff', border: 'none', borderRadius: '0.75rem', cursor: 'pointer', fontWeight: 'bold' }}
+                    className="feedback-submit-btn"
                   >
                     {submittingFeedback ? 'Submitting...' : 'Submit'}
                   </button>
@@ -983,12 +904,23 @@ const ReceiverDashboard = () => {
         </div>
       )}
 
-      {/* ─── Toast Notification ─── */}
+      {/* ─── Toast ─── */}
       {toast && (
         <div className="receiver-toast">
           <span className="receiver-toast-icon">{toast.icon}</span>
           {toast.message}
         </div>
+      )}
+
+      {/* ─── Chat Window ─── */}
+      {chatTarget && (
+        <ChatWindow
+          listingId={chatTarget.listingId}
+          receiverId={chatTarget.receiverId}
+          otherUserName={chatTarget.otherUserName}
+          listingTitle={chatTarget.listingTitle}
+          onClose={() => setChatTarget(null)}
+        />
       )}
     </div>
   );

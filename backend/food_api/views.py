@@ -6,8 +6,8 @@ from rest_framework.authentication import TokenAuthentication
 from rest_framework.authtoken.models import Token
 from django.contrib.auth.models import User
 from django.db import connection
-from .models import FoodListing
-from .serializers import SignupSerializer, UserSerializer, LoginSerializer, FoodListingSerializer
+from .models import FoodListing, Message, Donation, Feedback
+from .serializers import SignupSerializer, UserSerializer, LoginSerializer, FoodListingSerializer, MessageSerializer, DonationSerializer, FeedbackSerializer
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -185,8 +185,6 @@ def get_food(request):
     return Response(data, status=status.HTTP_200_OK)
 
 from django.db import transaction
-from .models import Donation
-from .serializers import DonationSerializer
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -243,9 +241,6 @@ def my_claims(request):
     donations = Donation.objects.filter(receiver_id=request.user).order_by('-created_at')
     serializer = DonationSerializer(donations, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
-
-from .models import Feedback
-from .serializers import FeedbackSerializer
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -346,5 +341,100 @@ def admin_toggle_ban_user(request, user_id):
         return Response({"message": f"User {action} successfully", "is_active": user.is_active}, status=status.HTTP_200_OK)
     except User.DoesNotExist:
         return Response({"error": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+
+def _get_listing_chat_participants(food_listing, user):
+    """Return (donor, receiver) if user may access chat for this listing, else None."""
+    if food_listing.status not in ('Pending', 'Completed'):
+        return None
+    donation = Donation.objects.filter(food_id=food_listing).first()
+    if not donation:
+        return None
+    donor = donation.donor_id
+    receiver = donation.receiver_id
+    if user.id not in (donor.id, receiver.id):
+        return None
+    return donor, receiver
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def send_message(request):
+    receiver_id = request.data.get('receiver_id')
+    food_listing_id = request.data.get('food_listing_id')
+    message_text = (request.data.get('message_text') or '').strip()
+
+    if not receiver_id or not food_listing_id:
+        return Response(
+            {"error": "receiver_id and food_listing_id are required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not message_text:
+        return Response(
+            {"error": "message_text cannot be empty."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        food_listing = FoodListing.objects.get(id=food_listing_id)
+    except FoodListing.DoesNotExist:
+        return Response({"error": "Food listing not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    if food_listing.status != 'Pending':
+        return Response(
+            {"error": "Chat is only available for active (Pending) donations."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    participants = _get_listing_chat_participants(food_listing, request.user)
+    if not participants:
+        return Response({"error": "You are not authorized to chat on this listing."}, status=status.HTTP_403_FORBIDDEN)
+
+    donor, receiver = participants
+    try:
+        receiver_user = User.objects.get(id=receiver_id)
+    except User.DoesNotExist:
+        return Response({"error": "Receiver not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    allowed_ids = {donor.id, receiver.id}
+    if request.user.id not in allowed_ids or receiver_user.id not in allowed_ids:
+        return Response({"error": "Invalid chat participants for this listing."}, status=status.HTTP_400_BAD_REQUEST)
+    if request.user.id == receiver_user.id:
+        return Response({"error": "Cannot send a message to yourself."}, status=status.HTTP_400_BAD_REQUEST)
+
+    message = Message.objects.create(
+        sender=request.user,
+        receiver=receiver_user,
+        food_listing=food_listing,
+        message_text=message_text,
+    )
+    return Response(MessageSerializer(message).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def chat_history(request, listing_id):
+    try:
+        food_listing = FoodListing.objects.get(id=listing_id)
+    except FoodListing.DoesNotExist:
+        return Response({"error": "Food listing not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    participants = _get_listing_chat_participants(food_listing, request.user)
+    if not participants:
+        return Response({"error": "You are not authorized to view this chat."}, status=status.HTTP_403_FORBIDDEN)
+
+    donor, receiver = participants
+    messages = Message.objects.filter(
+        food_listing=food_listing,
+        sender__in=[donor, receiver],
+        receiver__in=[donor, receiver],
+    ).select_related('sender', 'receiver', 'sender__profile', 'receiver__profile').order_by('timestamp')
+
+    return Response({
+        "messages": MessageSerializer(messages, many=True).data,
+        "current_user_id": request.user.id,
+        "food_listing_id": food_listing.id,
+        "other_user": UserSerializer(receiver if request.user.id == donor.id else donor).data,
+    }, status=status.HTTP_200_OK)
 
 

@@ -13,17 +13,18 @@ import SignUp from './SignUp';
 import ReceiverDashboard from './ReceiverDashboard';
 import { AuthProvider } from './AuthContext';
 import ProtectedRoute from './ProtectedRoute';
+import DonorFoodListingManager from './components/DonorFoodListingManager';
 
 const AppContent = () => {
   const location = useLocation();
-  
+
   // Conditionally hide public header on the Admin Dashboard page
   const showHeader = location.pathname !== '/admin';
 
   return (
     <div className="App w-full min-h-screen overflow-x-hidden">
       {showHeader && <Header />}
-      
+
       <Routes>
         {/* Public Routes */}
         <Route path="/" element={<Home />} />
@@ -32,33 +33,33 @@ const AppContent = () => {
         <Route path="/contact" element={<Contact />} />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<SignUp />} />
-        
+
         {/* Protected Dashboard Routes */}
-        <Route 
-          path="/donor-dashboard" 
+        <Route
+          path="/donor-dashboard"
           element={
             <ProtectedRoute allowedRole="donor">
               <DonorDashboard />
             </ProtectedRoute>
-          } 
+          }
         />
-        <Route 
-          path="/receiver-dashboard" 
+        <Route
+          path="/receiver-dashboard"
           element={
             <ProtectedRoute allowedRole="receiver">
               <ReceiverDashboard />
             </ProtectedRoute>
-          } 
+          }
         />
-        <Route 
-          path="/admin-dashboard" 
+        <Route
+          path="/admin-dashboard"
           element={
             <ProtectedRoute allowedRole="admin">
               <AdminDashboard />
             </ProtectedRoute>
-          } 
+          }
         />
-        
+
         {/* Fallback Catch-All Route */}
         <Route path="*" element={<Home />} />
       </Routes>

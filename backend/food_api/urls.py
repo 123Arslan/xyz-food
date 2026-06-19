@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import signup, login, get_users, test_db, FoodListingListCreateView, FoodListingDetailView, get_food, claim_food, complete_transaction, my_claims, post_feedback, admin_stats, admin_listings, admin_delete_listing, admin_users, admin_toggle_ban_user
+from .views import signup, login, get_users, test_db, FoodListingListCreateView, FoodListingDetailView, get_food, claim_food, complete_transaction, my_claims, post_feedback, admin_stats, admin_listings, admin_delete_listing, admin_users, admin_toggle_ban_user, send_message, chat_history
 
 urlpatterns = [
     path('signup/', signup, name='signup'),
@@ -18,4 +18,6 @@ urlpatterns = [
     path('admin/listings/<int:pk>/', admin_delete_listing, name='admin_delete_listing'),
     path('admin/users/', admin_users, name='admin_users'),
     path('admin/users/<int:user_id>/ban/', admin_toggle_ban_user, name='admin_toggle_ban_user'),
+    path('chat/send/', send_message, name='send_message'),
+    path('chat/history/<int:listing_id>/', chat_history, name='chat_history'),
 ]

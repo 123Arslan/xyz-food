@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from django.db import transaction
-from .models import Profile, FoodListing, Donation, Feedback
+from .models import Profile, FoodListing, Donation, Feedback, Message
 
 class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
@@ -69,6 +69,23 @@ class DonationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Donation
         fields = ['id', 'food_listing', 'donor', 'receiver', 'created_at']
+
+class MessageSerializer(serializers.ModelSerializer):
+    sender = UserSerializer(read_only=True)
+    receiver = UserSerializer(read_only=True)
+    food_listing_id = serializers.IntegerField(source='food_listing.id', read_only=True)
+
+    class Meta:
+        model = Message
+        fields = [
+            'id',
+            'sender',
+            'receiver',
+            'food_listing_id',
+            'message_text',
+            'timestamp',
+        ]
+        read_only_fields = fields
 
 class FeedbackSerializer(serializers.ModelSerializer):
     class Meta:

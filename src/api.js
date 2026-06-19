@@ -207,6 +207,43 @@ export const getMyClaims = async () => {
   }
 };
 
+export const sendChatMessage = async (receiverId, foodListingId, messageText) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/chat/send/`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({
+        receiver_id: receiverId,
+        food_listing_id: foodListingId,
+        message_text: messageText,
+      }),
+    });
+    const data = await response.json();
+    return response.ok ? { success: true, data } : { success: false, error: data };
+  } catch (error) {
+    return { success: false, error: 'Network error or server down' };
+  }
+};
+
+export const getChatHistory = async (listingId) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/chat/history/${listingId}/`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+    });
+    const data = await response.json();
+    return response.ok ? { success: true, data } : { success: false, error: data };
+  } catch (error) {
+    return { success: false, error: 'Network error or server down' };
+  }
+};
+
 // Admin API endpoints
 export const getAdminStats = async () => {
   try {
