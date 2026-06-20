@@ -1,7 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
+import { toast } from 'react-toastify';
 import { getFoodListings, createFoodListing, updateFoodListing, deleteFoodListing, completeTransaction } from '../api';
 import { useAuth } from '../AuthContext';
 import ChatWindow from './ChatWindow';
+import DonorAnalytics from './DonorAnalytics';
 import './DonorFoodListingManager.css';
 
 /* ── Form state uses snake_case keys matching Django model attributes directly ── */
@@ -124,13 +126,28 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
     if (!form.food_type) return 'Please select a food type.';
     if (!form.quantity.trim()) return 'Please enter the quantity available.';
     if (!form.description.trim()) return 'Please enter a food description.';
-    if (!form.pickup_time) return 'Please select the pickup time.';
+    if (!form.pickup_time) return 'Please select the pickup time (Cooked Time).';
     if (!form.expiry_time) return 'Please select the expiry time.';
     if (!form.pickup_location.trim()) return 'Please enter a pickup address.';
     if (!form.contact_phone.trim()) return 'Please enter a contact phone number.';
     if (!form.food_image_url.trim()) return 'Please enter the food image URL.';
     return '';
   };
+
+  /* ── Form Validity Check for Submit Button ── */
+  const isFormValid = useMemo(() => {
+    return (
+      postForm.food_title.trim() &&
+      postForm.food_type &&
+      postForm.quantity.trim() &&
+      postForm.description.trim() &&
+      postForm.pickup_time &&
+      postForm.expiry_time &&
+      postForm.pickup_location.trim() &&
+      postForm.contact_phone.trim() &&
+      postForm.food_image_url.trim()
+    );
+  }, [postForm]);
 
   /* ── Build the API payload — keys already match Django model ── */
   const buildPayload = (form) => ({
@@ -168,6 +185,10 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
       setStatusType('success');
       setPostForm(initialFormState);
       loadFoodListings();
+      // Hook Type 1: Receiver Alert - Simulate notification to receivers
+      toast.success('🍲 New food available near you!', {
+        icon: '🔔',
+      });
     } else {
       const message =
         response.error?.detail ||
@@ -340,6 +361,7 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
                 value={postForm.food_type}
                 onChange={handlePostChange}
                 className="donor-select"
+                required
               >
                 <option value="">Select food type</option>
                 <option value="Veg">Veg</option>
@@ -373,15 +395,16 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
               />
             </div>
 
-            {/* Row 3: Pickup Time | Expiry Time */}
+            {/* Row 3: Pickup Time (Cooked Time) | Expiry Time */}
             <div className="donor-form-group">
-              <label className="donor-form-label">Pickup Time *</label>
+              <label className="donor-form-label">Pickup Time (Cooked Time) *</label>
               <input
                 name="pickup_time"
                 value={postForm.pickup_time}
                 onChange={handlePostChange}
                 type="datetime-local"
                 className="donor-input"
+                required
               />
             </div>
             <div className="donor-form-group">
@@ -442,12 +465,20 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
             <button
               type="submit"
               className="donor-submit-btn"
+              disabled={!isFormValid || statusMessage === 'Posting Listing...'}
+              style={{
+                opacity: !isFormValid || statusMessage === 'Posting Listing...' ? 0.6 : 1,
+                cursor: !isFormValid || statusMessage === 'Posting Listing...' ? 'not-allowed' : 'pointer',
+              }}
             >
               {statusMessage === 'Posting Listing...' ? 'Posting Listing...' : 'Post Food Listing'}
             </button>
           </form>
         </section>
       )}
+
+      {/* ═══════════════════ ANALYTICS DASHBOARD ═══════════════════ */}
+      <DonorAnalytics />
 
       {/* ═══════════════════ MANAGE LISTINGS ═══════════════════ */}
       {showManage && (

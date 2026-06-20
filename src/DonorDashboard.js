@@ -5,6 +5,7 @@ import {
 import './DonorDashboard.css';
 import './Home.css';
 import DonorFoodListingManager from './components/DonorFoodListingManager';
+import Leaderboard from './components/Leaderboard';
 
 const DonorDashboard = () => {
   const [activeTab, setActiveTab] = useState('settings');
@@ -212,6 +213,12 @@ const DonorDashboard = () => {
     </div>
   );
 
+  const renderLeaderboard = () => (
+    <div className="donor-content-section">
+      <Leaderboard />
+    </div>
+  );
+
   return (
     <div className="donor-dashboard-page bg-slate-50 font-sans min-h-screen">
       {/* Hero Header */}
@@ -248,6 +255,7 @@ const DonorDashboard = () => {
                 { key: 'overview', label: 'Overview' },
                 { key: 'post', label: 'Post Food' },
                 { key: 'listings', label: 'My Listings' },
+                { key: 'leaderboard', label: 'Leaderboard' },
                 { key: 'settings', label: 'Settings & Feedback' },
               ].map(tab => (
                 <button
@@ -268,6 +276,7 @@ const DonorDashboard = () => {
         {activeTab === 'overview' && renderOverview()}
         {activeTab === 'post' && renderPostFood()}
         {activeTab === 'listings' && renderListings()}
+        {activeTab === 'leaderboard' && renderLeaderboard()}
         {activeTab === 'settings' && renderSettings()}
       </div>
 

@@ -1,5 +1,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import { ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import './App.css';
 import Header from './Header';
 import Home from './Home';
@@ -73,6 +75,25 @@ function App() {
       <Router>
         <div className="w-full min-h-screen overflow-x-hidden">
           <AppContent />
+          <ToastContainer
+            position="top-right"
+            autoClose={5000}
+            hideProgressBar={false}
+            newestOnTop={false}
+            closeOnClick
+            rtl={false}
+            pauseOnFocusLoss
+            draggable
+            pauseOnHover
+            theme="colored"
+            toastStyle={{
+              backgroundColor: '#059669',
+              color: '#ffffff',
+            }}
+            progressStyle={{
+              backgroundColor: '#047857',
+            }}
+          />
         </div>
       </Router>
     </AuthProvider>

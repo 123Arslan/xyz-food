@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
+import { toast } from 'react-toastify';
 import './ReceiverDashboard.css';
 import './Home.css';
 import { claimFood, completeTransaction, getMyClaims } from './api';
@@ -67,6 +68,46 @@ const formatDate = (dateStr) => {
   } catch (e) {
     return dateStr;
   }
+};
+
+// ─── Expiry Calculation Helper Functions ─────────────────────
+const getExpiryThresholdHours = (foodType) => {
+  if (!foodType) return 24; // Default: 24 hours
+  const type = foodType.toLowerCase();
+  if (type.includes('cooked') || type.includes('meal')) {
+    return 12; // Cooked Food: 12 hours
+  } else if (type.includes('veg') || type.includes('fruit') || type.includes('vegetable')) {
+    return 48; // Veggies/Fruits: 48 hours
+  } else {
+    return 24; // Default/Others: 24 hours
+  }
+};
+
+const calculateExpiryInfo = (item) => {
+  const cookedTime = item.pickup_time || item.created_at;
+  if (!cookedTime) {
+    return { isExpiringSoon: false, hoursRemaining: null, freshnessStatus: 'Unknown' };
+  }
+
+  const cookedDate = new Date(cookedTime);
+  const now = new Date();
+  const thresholdHours = getExpiryThresholdHours(item.food_type);
+  const expiryDate = new Date(cookedDate.getTime() + thresholdHours * 60 * 60 * 1000);
+  const hoursRemaining = (expiryDate - now) / (1000 * 60 * 60);
+  const isExpiringSoon = hoursRemaining > 0 && hoursRemaining < 2; // Less than 2 hours
+
+  let freshnessStatus = 'Fresh';
+  if (hoursRemaining <= 0) {
+    freshnessStatus = 'Expired';
+  } else if (hoursRemaining < 2) {
+    freshnessStatus = 'Critical';
+  } else if (hoursRemaining < 6) {
+    freshnessStatus = 'Warning';
+  } else if (hoursRemaining < 12) {
+    freshnessStatus = 'Good';
+  }
+
+  return { isExpiringSoon, hoursRemaining, freshnessStatus, expiryDate };
 };
 
 // ─── Star Rating Component ──────────────────────────────────
@@ -237,6 +278,28 @@ const ReceiverDashboard = () => {
   const mealsClaimed = claims.filter(c => c.status !== 'Completed').length;
   const mealsFed = claims.filter(c => c.status === 'Completed').length;
 
+  // ─── Process Food Items with Expiry Info & Sorting ───────────
+  const processedFoodItems = useMemo(() => {
+    const itemsWithExpiry = foodItems.map(item => ({
+      ...item,
+      expiryInfo: calculateExpiryInfo(item),
+    }));
+
+    // Sort: Critical expiring items first, then by freshness status
+    return itemsWithExpiry.sort((a, b) => {
+      // If one is expiring soon and the other isn't, expiring comes first
+      if (a.expiryInfo.isExpiringSoon && !b.expiryInfo.isExpiringSoon) return -1;
+      if (!a.expiryInfo.isExpiringSoon && b.expiryInfo.isExpiringSoon) return 1;
+
+      // Then sort by hours remaining (ascending)
+      if (a.expiryInfo.hoursRemaining !== null && b.expiryInfo.hoursRemaining !== null) {
+        return a.expiryInfo.hoursRemaining - b.expiryInfo.hoursRemaining;
+      }
+
+      return 0;
+    });
+  }, [foodItems]);
+
   // ─── Handlers ─────────────────────────────────────────────
   const handleClaim = async (foodId) => {
     setClaimingId(foodId);
@@ -250,6 +313,10 @@ const ReceiverDashboard = () => {
       const response = await claimFood(foodId);
       if (response.success) {
         setToast({ icon: '✅', message: `"${item.food_title || item.name}" claimed successfully!` });
+        // Hook Type 2: Donor Alert - Simulate notification to donor
+        toast.success('✅ Your food listing has been claimed!', {
+          icon: '🔔',
+        });
         await fetchAvailableFood();
         await fetchMyClaims();
       } else {
@@ -407,9 +474,15 @@ const ReceiverDashboard = () => {
         <div className="error-state">{errorMsg}</div>
       ) : foodItems.length > 0 ? (
         <div className="receiver-food-grid">
-          {foodItems.map(item => (
-            <div className="food-item-card" key={item.id}>
+          {processedFoodItems.map(item => (
+            <div 
+              className={`food-item-card ${item.expiryInfo.isExpiringSoon && item.status === 'Available' ? 'critical-expiry-border' : ''}`} 
+              key={item.id}
+            >
               <div className="food-item-image-wrapper">
+                {item.expiryInfo.isExpiringSoon && item.status === 'Available' && (
+                  <div className="critical-expiry-badge">⚠️ EXPIRING SOON!</div>
+                )}
                 {item.food_image_url ? (
                   <img
                     src={item.food_image_url}
