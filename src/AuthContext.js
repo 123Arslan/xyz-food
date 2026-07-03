@@ -8,6 +8,8 @@ export const AuthProvider = ({ children }) => {
   const [isDonor, setIsDonor] = useState(false);
   const [isReceiver, setIsReceiver] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isRider, setIsRider] = useState(false);
+  const [accountStatus, setAccountStatus] = useState('Pending');
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -17,6 +19,8 @@ export const AuthProvider = ({ children }) => {
     const savedIsDonor = localStorage.getItem('isDonor') === 'true' || sessionStorage.getItem('isDonor') === 'true';
     const savedIsReceiver = localStorage.getItem('isReceiver') === 'true' || sessionStorage.getItem('isReceiver') === 'true';
     const savedIsAdmin = localStorage.getItem('isAdmin') === 'true' || sessionStorage.getItem('isAdmin') === 'true';
+    const savedIsRider = localStorage.getItem('isRider') === 'true' || sessionStorage.getItem('isRider') === 'true';
+    const savedAccountStatus = localStorage.getItem('accountStatus') || sessionStorage.getItem('accountStatus') || 'Pending';
 
     if (savedToken) {
       setToken(savedToken);
@@ -24,12 +28,14 @@ export const AuthProvider = ({ children }) => {
       setIsDonor(savedIsDonor);
       setIsReceiver(savedIsReceiver);
       setIsAdmin(savedIsAdmin);
+      setIsRider(savedIsRider);
+      setAccountStatus(savedAccountStatus);
       setIsAuthenticated(true);
     }
     setLoading(false);
   }, []);
 
-  const login = (authToken, userEmail, userIsDonor, userIsReceiver, userIsAdmin = false, rememberMe = false) => {
+  const login = (authToken, userEmail, userIsDonor, userIsReceiver, userIsAdmin = false, userIsRider = false, userAccountStatus = 'Pending', rememberMe = false) => {
     const storage = rememberMe ? localStorage : sessionStorage;
 
     storage.setItem('authToken', authToken);
@@ -38,12 +44,16 @@ export const AuthProvider = ({ children }) => {
     storage.setItem('isDonor', String(userIsDonor));
     storage.setItem('isReceiver', String(userIsReceiver));
     storage.setItem('isAdmin', String(userIsAdmin));
+    storage.setItem('isRider', String(userIsRider));
+    storage.setItem('accountStatus', userAccountStatus);
 
     setToken(authToken);
     setUsername(userEmail);
     setIsDonor(userIsDonor);
     setIsReceiver(userIsReceiver);
     setIsAdmin(userIsAdmin);
+    setIsRider(userIsRider);
+    setAccountStatus(userAccountStatus);
     setIsAuthenticated(true);
   };
 
@@ -54,6 +64,8 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem('isDonor');
     localStorage.removeItem('isReceiver');
     localStorage.removeItem('isAdmin');
+    localStorage.removeItem('isRider');
+    localStorage.removeItem('accountStatus');
 
     sessionStorage.removeItem('authToken');
     sessionStorage.removeItem('token');
@@ -61,6 +73,8 @@ export const AuthProvider = ({ children }) => {
     sessionStorage.removeItem('isDonor');
     sessionStorage.removeItem('isReceiver');
     sessionStorage.removeItem('isAdmin');
+    sessionStorage.removeItem('isRider');
+    sessionStorage.removeItem('accountStatus');
 
     localStorage.removeItem('userData');
     sessionStorage.removeItem('userData');
@@ -70,11 +84,13 @@ export const AuthProvider = ({ children }) => {
     setIsDonor(false);
     setIsReceiver(false);
     setIsAdmin(false);
+    setIsRider(false);
+    setAccountStatus('Pending');
     setIsAuthenticated(false);
   };
 
   return (
-    <AuthContext.Provider value={{ token, username, isDonor, isReceiver, isAdmin, isAuthenticated, loading, login, logout }}>
+    <AuthContext.Provider value={{ token, username, isDonor, isReceiver, isAdmin, isRider, accountStatus, isAuthenticated, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

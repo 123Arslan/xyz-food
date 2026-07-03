@@ -260,6 +260,10 @@
 .status-badge.available { background-color: #dbeafe; color: #1e40af; }
 .status-badge.claimed { background-color: #fef3c7; color: #b45309; }
 .status-badge.completed { background-color: #d1fae5; color: #065f46; }
+.status-badge.active { background-color: #10b981; color: white; }
+.status-badge.pending { background-color: #f59e0b; color: white; }
+.status-badge.rejected { background-color: #ef4444; color: white; }
+.status-badge.banned { background-color: #ef4444; color: white; }
 
 .action-btns {
   display: flex;

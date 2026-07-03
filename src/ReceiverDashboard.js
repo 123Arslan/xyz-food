@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { toast } from 'react-toastify';
+import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
+import L from 'leaflet';
 import './ReceiverDashboard.css';
 import './Home.css';
 import { claimFood, completeTransaction, getMyClaims } from './api';
@@ -8,6 +10,38 @@ import ChatWindow from './components/ChatWindow';
 
 // ─── Constants ──────────────────────────────────────────────
 const CITIES = ['Lahore', 'Karachi', 'Islamabad', 'Rawalpindi', 'Faisalabad', 'Multan'];
+
+// ─── Mock Location Coordinates ───────────────────────────────
+const LOCATION_COORDINATES = {
+  'Lahore': { lat: 31.5204, lng: 74.3587 },
+  'Karachi': { lat: 24.8607, lng: 67.0011 },
+  'Islamabad': { lat: 33.6844, lng: 73.0479 },
+  'Rawalpindi': { lat: 33.5651, lng: 73.0169 },
+  'Faisalabad': { lat: 31.4504, lng: 73.1350 },
+  'Multan': { lat: 30.1575, lng: 71.5249 },
+  'Daska': { lat: 32.3236, lng: 74.3523 },
+  'Downtown Central Park': { lat: 31.5204, lng: 74.3587 },
+  'default': { lat: 31.5204, lng: 74.3587 },
+};
+
+// ─── Custom Marker Icons ─────────────────────────────────────
+const donorIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+
+const receiverIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
 
 // ─── Helper Functions ──────────────────────────────────────
 const getFoodTypeClass = (type) => {
@@ -110,6 +144,50 @@ const calculateExpiryInfo = (item) => {
   return { isExpiringSoon, hoursRemaining, freshnessStatus, expiryDate };
 };
 
+// ─── Distance Calculation Helper ─────────────────────────────
+const calculateDistance = (lat1, lng1, lat2, lng2) => {
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const distance = R * c; // Distance in km
+  return distance;
+};
+
+const getCoordinatesFromLocation = (locationText) => {
+  if (!locationText) return LOCATION_COORDINATES.default;
+  
+  const locationLower = locationText.toLowerCase();
+  for (const [city, coords] of Object.entries(LOCATION_COORDINATES)) {
+    if (locationLower.includes(city.toLowerCase())) {
+      return coords;
+    }
+  }
+  return LOCATION_COORDINATES.default;
+};
+
+const formatDistance = (distanceKm) => {
+  if (distanceKm < 1) {
+    return `${Math.round(distanceKm * 1000)} m away`;
+  }
+  return `${distanceKm.toFixed(1)} km away`;
+};
+
+const estimateTravelTime = (distanceKm) => {
+  const avgSpeed = 30; // km/h average speed in city
+  const timeHours = distanceKm / avgSpeed;
+  const timeMinutes = Math.round(timeHours * 60);
+  if (timeMinutes < 60) {
+    return `${timeMinutes} mins`;
+  }
+  const hours = Math.floor(timeMinutes / 60);
+  const mins = timeMinutes % 60;
+  return `${hours}h ${mins}m`;
+};
+
 // ─── Star Rating Component ──────────────────────────────────
 const StarRating = ({ rating, onRate, disabled }) => {
   const [hoverIndex, setHoverIndex] = useState(0);
@@ -166,6 +244,38 @@ const ReceiverDashboard = () => {
   const [userLatitude, setUserLatitude] = useState(null);
   const [userLongitude, setUserLongitude] = useState(null);
   const [chatTarget, setChatTarget] = useState(null);
+
+  // Map View State
+  const [expandedMapItem, setExpandedMapItem] = useState(null);
+
+  // Profile Settings State
+  const [profileForm, setProfileForm] = useState({
+    fullName: 'Ahmed Khan',
+    city: 'Lahore',
+    phone: '',
+    avatarUrl: ''
+  });
+  const [savingProfile, setSavingProfile] = useState(false);
+
+  // ─── Profile Settings Handler ─────────────────────────────
+  const handleProfileChange = (e) => {
+    setProfileForm({ ...profileForm, [e.target.name]: e.target.value });
+  };
+
+  const handleSaveProfile = async (e) => {
+    e.preventDefault();
+    setSavingProfile(true);
+    
+    // Simulate API call
+    setTimeout(() => {
+      setSavingProfile(false);
+      toast.success('Profile updated successfully!');
+      // Update selected city if changed
+      if (profileForm.city !== selectedCity) {
+        setSelectedCity(profileForm.city);
+      }
+    }, 1000);
+  };
 
   // ─── Effects ─────────────────────────────────────────────
   // Toast auto-dismiss
@@ -280,10 +390,29 @@ const ReceiverDashboard = () => {
 
   // ─── Process Food Items with Expiry Info & Sorting ───────────
   const processedFoodItems = useMemo(() => {
-    const itemsWithExpiry = foodItems.map(item => ({
-      ...item,
-      expiryInfo: calculateExpiryInfo(item),
-    }));
+    const itemsWithExpiry = foodItems.map(item => {
+      const donorCoords = getCoordinatesFromLocation(item.pickup_location);
+      const userCoords = userLatitude && userLongitude 
+        ? { lat: userLatitude, lng: userLongitude }
+        : LOCATION_COORDINATES[selectedCity] || LOCATION_COORDINATES.default;
+      
+      const distance = calculateDistance(
+        userCoords.lat, userCoords.lng,
+        donorCoords.lat, donorCoords.lng
+      );
+
+      return {
+        ...item,
+        expiryInfo: calculateExpiryInfo(item),
+        distanceInfo: {
+          distanceKm: distance,
+          distanceText: formatDistance(distance),
+          travelTime: estimateTravelTime(distance),
+          donorCoords,
+          userCoords,
+        },
+      };
+    });
 
     // Sort: Critical expiring items first, then by freshness status
     return itemsWithExpiry.sort((a, b) => {
@@ -298,7 +427,7 @@ const ReceiverDashboard = () => {
 
       return 0;
     });
-  }, [foodItems]);
+  }, [foodItems, userLatitude, userLongitude, selectedCity]);
 
   // ─── Handlers ─────────────────────────────────────────────
   const handleClaim = async (foodId) => {
@@ -529,6 +658,11 @@ const ReceiverDashboard = () => {
                 <div className="food-item-location">
                   <span className="food-item-location-label">Pickup Location</span>
                   <p className="food-item-location-text">📍 {item.pickup_location}</p>
+                  {item.distanceInfo && (
+                    <div className="distance-badge">
+                      📍 {item.distanceInfo.distanceText} | Est. travel: {item.distanceInfo.travelTime}
+                    </div>
+                  )}
                 </div>
 
                 <div className="food-item-times">
@@ -545,6 +679,12 @@ const ReceiverDashboard = () => {
 
               <div className="food-item-footer">
                 <button
+                  onClick={() => setExpandedMapItem(expandedMapItem === item.id ? null : item.id)}
+                  className="food-item-map-btn"
+                >
+                  {expandedMapItem === item.id ? '🗺️ Hide Map' : '🗺️ View Route'}
+                </button>
+                <button
                   onClick={() => handleClaim(item.id)}
                   disabled={claimingId === item.id}
                   className="food-item-claim-btn"
@@ -552,6 +692,39 @@ const ReceiverDashboard = () => {
                   {claimingId === item.id ? '⏳ Claiming...' : '🍽️ Claim Food'}
                 </button>
               </div>
+
+              {expandedMapItem === item.id && item.distanceInfo && (
+                <div className="food-item-map-container">
+                  <MapContainer
+                    center={[
+                      (item.distanceInfo.userCoords.lat + item.distanceInfo.donorCoords.lat) / 2,
+                      (item.distanceInfo.userCoords.lng + item.distanceInfo.donorCoords.lng) / 2
+                    ]}
+                    zoom={12}
+                    style={{ height: '300px', width: '100%', borderRadius: '12px' }}
+                  >
+                    <TileLayer
+                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    />
+                    <Marker position={[item.distanceInfo.userCoords.lat, item.distanceInfo.userCoords.lng]} icon={receiverIcon}>
+                      <Popup>Your Location</Popup>
+                    </Marker>
+                    <Marker position={[item.distanceInfo.donorCoords.lat, item.distanceInfo.donorCoords.lng]} icon={donorIcon}>
+                      <Popup>Donor Pickup Location</Popup>
+                    </Marker>
+                    <Polyline
+                      positions={[
+                        [item.distanceInfo.userCoords.lat, item.distanceInfo.userCoords.lng],
+                        [item.distanceInfo.donorCoords.lat, item.distanceInfo.donorCoords.lng]
+                      ]}
+                      color="#059669"
+                      weight={4}
+                      opacity={0.7}
+                    />
+                  </MapContainer>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -581,48 +754,53 @@ const ReceiverDashboard = () => {
           <p>Loading your claims...</p>
         </div>
       ) : claims.length > 0 ? (
-        <div className="claims-grid">
+        <div className="my-claims-grid">
           {claims.map(claim => (
-            <div key={claim.id} className="claim-card">
-              <div className="claim-card-header">
-                <div className="claim-card-icon-wrapper">
-                  <span className="claim-card-icon">{claim.icon}</span>
-                </div>
-                <div className="claim-card-info">
-                  <h4 className="claim-card-name">{claim.name}</h4>
-                  <p className="claim-card-donor">From: {claim.donor}</p>
-                </div>
-                <span className={`claim-status ${getStatusClass(claim.status)}`}>
-                  <span className="claim-status-dot"></span>
+            <div key={claim.id} className={`claim-card ${claim.status === 'Completed' ? 'completed' : ''}`}>
+              {/* Food Image Header */}
+              <div className="claim-image-header">
+                <img 
+                  src={claim.foodImage || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80'} 
+                  alt={claim.name}
+                  className="claim-food-image"
+                />
+                <span className={`claim-status-badge ${getStatusClass(claim.status)}`}>
                   {claim.status}
                 </span>
               </div>
 
+              {/* Card Body */}
               <div className="claim-card-body">
+                {/* Title & Donor Info */}
+                <div className="claim-header-info">
+                  <h4 className="claim-title">{claim.name}</h4>
+                  <p className="claim-donor">Donor: {claim.donor}</p>
+                </div>
+
+                {/* Coordination Metadata */}
                 {claim.status === 'Pending' && (
                   <div className="claim-coordination">
-                    <h5>Coordination Details</h5>
-                    <p>📞 <strong>Contact:</strong> {claim.donorPhone}</p>
-                    <p>📝 <strong>Instructions:</strong> {claim.donorInstructions}</p>
-                    {claim.donorId && (
-                      <button
-                        className="claim-chat-btn"
-                        onClick={() => setChatTarget({
-                          listingId: claim.foodId,
-                          receiverId: claim.donorId,
-                          otherUserName: claim.donor,
-                          listingTitle: claim.name,
-                        })}
-                      >
-                        💬 Message Donor
-                      </button>
-                    )}
+                    <div className="coordination-item">
+                      <span className="coordination-icon">📞</span>
+                      <div className="coordination-content">
+                        <span className="coordination-label">Contact</span>
+                        <span className="coordination-value">{claim.donorPhone}</span>
+                      </div>
+                    </div>
+                    <div className="coordination-item">
+                      <span className="coordination-icon">📝</span>
+                      <div className="coordination-content">
+                        <span className="coordination-label">Instructions</span>
+                        <span className="coordination-value">{claim.donorInstructions}</span>
+                      </div>
+                    </div>
                   </div>
                 )}
 
+                {/* Feedback Section */}
                 {claim.status === 'Picked Up' && !claim.feedbackSubmitted && (
-                  <div className="claim-feedback">
-                    <span className="claim-feedback-label">Rate your experience:</span>
+                  <div className="claim-feedback-section">
+                    <span className="feedback-label">Rate your experience:</span>
                     <StarRating
                       rating={claim.rating}
                       onRate={(stars) => handleRate(claim.id, stars)}
@@ -630,7 +808,7 @@ const ReceiverDashboard = () => {
                     />
                     {claim.rating > 0 && (
                       <button
-                        className="claim-feedback-submit"
+                        className="feedback-submit-btn"
                         onClick={() => handleSubmitFeedback(claim.id)}
                       >
                         Submit Feedback
@@ -640,42 +818,61 @@ const ReceiverDashboard = () => {
                 )}
 
                 {claim.feedbackSubmitted && (
-                  <div className="claim-feedback-submitted">
-                    <span>✅</span> Feedback submitted — {claim.rating}/5 stars
+                  <div className="feedback-submitted">
+                    <span className="feedback-icon">✅</span>
+                    <span className="feedback-text">Feedback submitted — {claim.rating}/5 stars</span>
                   </div>
                 )}
 
+                {/* Action Buttons */}
                 <div className="claim-actions">
                   {claim.status === 'Pending' && claim.donorId && (
-                    <button
-                      className="claim-action-btn claim-action-chat"
-                      onClick={() => setChatTarget({
-                        listingId: claim.foodId,
-                        receiverId: claim.donorId,
-                        otherUserName: claim.donor,
-                        listingTitle: claim.name,
-                      })}
-                    >
-                      💬 Chat Now
-                    </button>
+                    <div className="action-buttons-row">
+                      <button
+                        className="claim-btn claim-btn-chat"
+                        onClick={() => setChatTarget({
+                          listingId: claim.foodId,
+                          receiverId: claim.donorId,
+                          otherUserName: claim.donor,
+                          listingTitle: claim.name,
+                        })}
+                      >
+                        💬 Chat Now
+                      </button>
+                      <button
+                        className="claim-btn claim-btn-message"
+                        onClick={() => setChatTarget({
+                          listingId: claim.foodId,
+                          receiverId: claim.donorId,
+                          otherUserName: claim.donor,
+                          listingTitle: claim.name,
+                        })}
+                      >
+                        ✉️ Message
+                      </button>
+                    </div>
                   )}
 
                   {claim.status === 'Pending' && (
-                    <button
-                      className="claim-action-btn claim-action-complete"
-                      onClick={() => handleCompleteTransaction(claim.foodId)}
-                    >
-                      ✅ Mark as Completed
-                    </button>
+                    <div className="action-buttons-row">
+                      <button
+                        className="claim-btn claim-btn-complete"
+                        onClick={() => handleCompleteTransaction(claim.foodId)}
+                      >
+                        ✅ Mark Completed
+                      </button>
+                    </div>
                   )}
 
                   {(claim.status === 'Pending' || claim.status === 'Ready for Pickup') && (
-                    <button
-                      className="claim-action-btn claim-action-pickup"
-                      onClick={() => handlePickup(claim.id)}
-                    >
-                      📦 Picked Up
-                    </button>
+                    <div className="action-buttons-row">
+                      <button
+                        className="claim-btn claim-btn-pickup"
+                        onClick={() => handlePickup(claim.id)}
+                      >
+                        📦 Picked Up
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -689,6 +886,110 @@ const ReceiverDashboard = () => {
           <p className="empty-state-text">Browse available food and claim what you need.</p>
         </div>
       )}
+    </div>
+  );
+
+  const renderProfileSettings = () => (
+    <div className="receiver-section">
+      <div className="receiver-section-header">
+        <h2 className="receiver-section-title">
+          <span className="section-icon">⚙️</span>
+          Profile Settings
+        </h2>
+      </div>
+
+      <div className="profile-settings-container">
+        <form onSubmit={handleSaveProfile} className="profile-settings-form">
+          <div className="profile-avatar-section">
+            <div className="profile-avatar-preview">
+              {profileForm.avatarUrl ? (
+                <img src={profileForm.avatarUrl} alt="Profile" className="profile-avatar-img" />
+              ) : (
+                <div className="profile-avatar-placeholder">
+                  <span className="avatar-initials">{profileForm.fullName.split(' ').map(n => n[0]).join('').toUpperCase()}</span>
+                </div>
+              )}
+            </div>
+            <div className="profile-avatar-upload">
+              <label htmlFor="avatarUrl" className="avatar-upload-label">
+                <span className="upload-icon">📷</span>
+                Update Avatar
+              </label>
+              <input
+                type="url"
+                id="avatarUrl"
+                name="avatarUrl"
+                value={profileForm.avatarUrl}
+                onChange={handleProfileChange}
+                placeholder="Enter image URL"
+                className="avatar-url-input"
+              />
+            </div>
+          </div>
+
+          <div className="profile-form-grid">
+            <div className="profile-form-group">
+              <label htmlFor="fullName" className="profile-form-label">Full Name</label>
+              <input
+                type="text"
+                id="fullName"
+                name="fullName"
+                value={profileForm.fullName}
+                onChange={handleProfileChange}
+                placeholder="Enter your full name"
+                className="profile-form-input"
+                required
+              />
+            </div>
+
+            <div className="profile-form-group">
+              <label htmlFor="city" className="profile-form-label">City</label>
+              <select
+                id="city"
+                name="city"
+                value={profileForm.city}
+                onChange={handleProfileChange}
+                className="profile-form-select"
+                required
+              >
+                {CITIES.map(city => (
+                  <option key={city} value={city}>{city}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="profile-form-group">
+              <label htmlFor="phone" className="profile-form-label">Phone Number</label>
+              <input
+                type="tel"
+                id="phone"
+                name="phone"
+                value={profileForm.phone}
+                onChange={handleProfileChange}
+                placeholder="Enter your phone number"
+                className="profile-form-input"
+              />
+            </div>
+          </div>
+
+          <div className="profile-form-actions">
+            <button
+              type="submit"
+              disabled={savingProfile}
+              className="profile-save-btn"
+            >
+              {savingProfile ? (
+                <>
+                  <span className="btn-spinner"></span>
+                  Saving...
+                </>
+              ) : (
+                'Save Changes'
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 
@@ -814,6 +1115,7 @@ const ReceiverDashboard = () => {
               {[
                 { key: 'food', label: 'Available Food' },
                 { key: 'claims', label: 'My Claims' },
+                { key: 'profile', label: 'Profile Settings' },
                 { key: 'help', label: 'Help & Support' },
               ].map(tab => (
                 <button
@@ -857,6 +1159,7 @@ const ReceiverDashboard = () => {
 
         {activeTab === 'food' && renderFoodList()}
         {activeTab === 'claims' && renderMyClaims()}
+        {activeTab === 'profile' && renderProfileSettings()}
         {activeTab === 'help' && renderHelp()}
       </div>
 

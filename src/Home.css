@@ -409,6 +409,13 @@
   margin-bottom: 60px;
 }
 
+.footer-logo {
+  height: 45px;
+  width: auto;
+  object-fit: contain;
+  margin-bottom: 15px;
+}
+
 .footer-col h2 {
   font-size: 24px;
   font-weight: 800;

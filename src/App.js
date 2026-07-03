@@ -16,6 +16,7 @@ import ReceiverDashboard from './ReceiverDashboard';
 import { AuthProvider } from './AuthContext';
 import ProtectedRoute from './ProtectedRoute';
 import DonorFoodListingManager from './components/DonorFoodListingManager';
+import RiderDashboard from './components/RiderDashboard';
 
 const AppContent = () => {
   const location = useLocation();
@@ -58,6 +59,14 @@ const AppContent = () => {
           element={
             <ProtectedRoute allowedRole="admin">
               <AdminDashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/rider-dashboard"
+          element={
+            <ProtectedRoute allowedRole="rider">
+              <RiderDashboard />
             </ProtectedRoute>
           }
         />

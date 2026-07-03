@@ -8,16 +8,24 @@ class Profile(models.Model):
         ('Receiver', 'Receiver'),
         ('Organization', 'Organization'),
         ('Admin', 'Admin'),
+        ('Rider', 'Rider'),
+    )
+    ACCOUNT_STATUS_CHOICES = (
+        ('Pending', 'Pending'),
+        ('Active', 'Active'),
+        ('Rejected', 'Rejected'),
     )
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     full_name = models.CharField(max_length=255)
     account_type = models.CharField(max_length=20, choices=ACCOUNT_TYPE_CHOICES, default='Donor')
+    account_status = models.CharField(max_length=20, choices=ACCOUNT_STATUS_CHOICES, default='Pending')
     contact_phone = models.CharField(max_length=30, blank=True, default='')
     instructions = models.TextField(blank=True, default='')
+    reward_points = models.IntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.user.email} - {self.account_type}"
+        return f"{self.user.email} - {self.account_type} ({self.account_status})"
 
 class FoodListing(models.Model):
     FOOD_TYPE_CHOICES = (
@@ -29,8 +37,9 @@ class FoodListing(models.Model):
 
     STATUS_CHOICES = (
         ('Available', 'Available'),
-        ('Pending', 'Pending'),
-        ('Completed', 'Completed'),
+        ('Claimed', 'Claimed / Awaiting Pickup'),
+        ('Out for Delivery', 'Out for Delivery / In-Transit'),
+        ('Completed', 'Successfully Completed'),
     )
 
     user = models.ForeignKey(
@@ -95,3 +104,22 @@ class Message(models.Model):
 
     def __str__(self):
         return f"Message from {self.sender.email} to {self.receiver.email} on {self.food_listing.food_title}"
+
+class Notification(models.Model):
+    NOTIFICATION_TYPES = (
+        ('claim', 'Food Claimed'),
+        ('delivery', 'Delivery Update'),
+        ('complete', 'Delivery Completed'),
+    )
+    recipient = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
+    notification_type = models.CharField(max_length=20, choices=NOTIFICATION_TYPES)
+    food_listing = models.ForeignKey(FoodListing, on_delete=models.CASCADE, related_name='notifications', null=True, blank=True)
+    message = models.TextField()
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.notification_type} notification for {self.recipient.email}"

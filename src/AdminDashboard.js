@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import axios from 'axios';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer
 } from 'recharts';
@@ -85,6 +86,34 @@ const AdminDashboard = () => {
       }
     } catch (err) {
       alert('Error updating user status');
+      console.error(err);
+    }
+  };
+
+  const handleApproveUser = async (userId) => {
+    try {
+      const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+      const response = await axios.post(`http://localhost:8000/api/admin/users/${userId}/approve/`, {}, {
+        headers: { Authorization: `Token ${token}` }
+      });
+      alert(response.data.message);
+      setUsers(users.map(u => u.id === userId ? { ...u, account_status: 'Active' } : u));
+    } catch (err) {
+      alert('Failed to approve user');
+      console.error(err);
+    }
+  };
+
+  const handleRejectUser = async (userId) => {
+    try {
+      const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
+      const response = await axios.post(`http://localhost:8000/api/admin/users/${userId}/reject/`, {}, {
+        headers: { Authorization: `Token ${token}` }
+      });
+      alert(response.data.message);
+      setUsers(users.map(u => u.id === userId ? { ...u, account_status: 'Rejected' } : u));
+    } catch (err) {
+      alert('Failed to reject user');
       console.error(err);
     }
   };
@@ -330,7 +359,7 @@ const AdminDashboard = () => {
                     <th>Name</th>
                     <th>Email</th>
                     <th>Role</th>
-                    <th>Status</th>
+                    <th>Account Status</th>
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -341,8 +370,24 @@ const AdminDashboard = () => {
                       <td>{user.full_name || user.username}</td>
                       <td>{user.email}</td>
                       <td>{user.account_type}</td>
-                      <td><span className={`status-badge ${user.is_active ? 'active' : 'banned'}`}>{user.is_active ? 'Active' : 'Banned'}</span></td>
+                      <td><span className={`status-badge ${user.account_status === 'Active' ? 'active' : user.account_status === 'Rejected' ? 'rejected' : 'pending'}`}>{user.account_status || 'Pending'}</span></td>
                       <td className="action-btns">
+                        {user.account_status === 'Pending' && (
+                          <>
+                            <button 
+                              className="approve-btn"
+                              onClick={() => handleApproveUser(user.id)}
+                            >
+                              Approve
+                            </button>
+                            <button 
+                              className="reject-btn"
+                              onClick={() => handleRejectUser(user.id)}
+                            >
+                              Reject
+                            </button>
+                          </>
+                        )}
                         <button 
                           className={user.is_active ? 'ban-btn' : 'unban-btn'}
                           onClick={() => handleToggleBan(user.id)}

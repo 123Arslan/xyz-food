@@ -5,7 +5,7 @@ import './Header.css';
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { isAuthenticated, logout, isDonor, isReceiver, isAdmin } = useAuth();
+  const { isAuthenticated, logout, isDonor, isReceiver, isAdmin, isRider } = useAuth();
   const navigate = useNavigate();
 
   const toggleMenu = () => {
@@ -27,7 +27,8 @@ const Header = () => {
       <div className="header-container">
         <div className="header-logo">
           <Link to="/" onClick={handleLinkClick}>
-            <span className="logo-text">Food</span> Donation
+            <img src="/fo.png" alt="EcoFeast Logo" className="header-logo-brand" />
+            <span className="logo-text">{/*Food*/}</span> {/*Donation*/}
           </Link>
         </div>
 
@@ -37,6 +38,7 @@ const Header = () => {
             <li><Link to="/about" onClick={handleLinkClick}>About</Link></li>
             {isDonor && <li><Link to="/donor-dashboard" onClick={handleLinkClick}>Donor Dashboard</Link></li>}
             {isReceiver && <li><Link to="/receiver-dashboard" onClick={handleLinkClick}>Receiver Dashboard</Link></li>}
+            {isRider && <li><Link to="/rider-dashboard" onClick={handleLinkClick}>🏍️ Rider Panel</Link></li>}
             {isAdmin && <li><Link to="/admin" onClick={handleLinkClick}>Admin Dashboard</Link></li>}
             <li><Link to="/impact" onClick={handleLinkClick}>Our Impact</Link></li>
             <li><Link to="/contact" onClick={handleLinkClick}>Contact Us</Link></li>

@@ -2,12 +2,12 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth import authenticate
 from django.db import transaction
-from .models import Profile, FoodListing, Donation, Feedback, Message
+from .models import Profile, FoodListing, Donation, Feedback, Message, Notification
 
 class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
-        fields = ['full_name', 'account_type', 'contact_phone', 'instructions', 'created_at']
+        fields = ['full_name', 'account_type', 'account_status', 'contact_phone', 'instructions', 'reward_points', 'created_at']
 
 class UserSerializer(serializers.ModelSerializer):
     profile = ProfileSerializer(read_only=True)
@@ -97,6 +97,12 @@ class FeedbackSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Rating must be between 1 and 5.")
         return value
 
+class NotificationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Notification
+        fields = ['id', 'notification_type', 'food_listing', 'message', 'is_read', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
 class SignupSerializer(serializers.Serializer):
     fullName = serializers.CharField(max_length=255)
     email = serializers.EmailField()
@@ -123,7 +129,8 @@ class SignupSerializer(serializers.Serializer):
             Profile.objects.create(
                 user=user,
                 full_name=full_name,
-                account_type=account_type
+                account_type=account_type,
+                account_status='Active'
             )
         return user
 

@@ -138,65 +138,148 @@ const DonorDashboard = () => {
   const renderSettings = () => (
     <div className="donor-content-section">
       <div className="settings-grid">
-        {/* Left: Profile Settings */}
-        <div className="settings-card">
-          <h3 className="settings-card-title">Profile Settings</h3>
-          <form onSubmit={handleSettingsSubmit} className="settings-form">
-            <div className="sf-field">
-              <label className="sf-label">Full Name</label>
-              <input
-                type="text"
-                name="name"
-                value={settingsForm.name}
-                onChange={handleSettingsChange}
-                className="sf-input"
-              />
+        {/* Left: Profile Settings - Redesigned to match Receiver Profile */}
+        <div className="settings-card profile-settings-card">
+          <form onSubmit={handleSettingsSubmit} className="profile-settings-form">
+            {/* Avatar Section */}
+            <div className="profile-avatar-section">
+              <div className="profile-avatar-preview">
+                {settingsForm.profilePic ? (
+                  <img src={settingsForm.profilePic} alt="Profile" className="profile-avatar-img" />
+                ) : (
+                  <div className="profile-avatar-placeholder">
+                    <span className="avatar-initials">{settingsForm.name.split(' ').map(n => n[0]).join('').toUpperCase()}</span>
+                  </div>
+                )}
+              </div>
+              <div className="profile-avatar-upload">
+  <label htmlFor="profilePic" className="avatar-upload-label">
+    <span className="upload-icon"></span>
+    Update Avatar
+  </label>
+  <input
+    type="file"
+    id="profilePic"
+    name="profilePic"
+    accept="image/*"
+    onChange={(e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          handleSettingsChange({
+            target: {
+              name: 'profilePic',
+              value: reader.result
+            }
+          });
+        };
+        reader.readAsDataURL(file);
+      }
+    }}
+    className="avatar-upload-input"
+    style={{ display: 'none' }}
+  />
+</div>
+             {/* <div className="profile-avatar-upload">
+                <label htmlFor="profilePic" className="avatar-upload-label">
+                  <span className="upload-icon">📷</span>
+                  Update Avatar
+                </label>
+                <input
+                  type="url"
+                  id="profilePic"
+                  name="profilePic"
+                  value={settingsForm.profilePic}
+                  onChange={handleSettingsChange}
+                  placeholder="Enter image URL"
+                  className="avatar-url-input"
+                />
+              </div>*/}
             </div>
-            <div className="sf-field">
-              <label className="sf-label">Email Address</label>
-              <input
-                type="email"
-                name="email"
-                value={settingsForm.email}
-                onChange={handleSettingsChange}
-                className="sf-input"
-              />
+
+            {/* Form Fields Grid */}
+            <div className="profile-form-grid">
+              <div className="profile-form-group">
+                <label htmlFor="name" className="profile-form-label">Full Name</label>
+                <input
+                  type="text"
+                  id="name"
+                  name="name"
+                  value={settingsForm.name}
+                  onChange={handleSettingsChange}
+                  placeholder="Enter your full name"
+                  className="profile-form-input"
+                  required
+                />
+              </div>
+
+              <div className="profile-form-group">
+                <label htmlFor="email" className="profile-form-label">Email Address</label>
+                <input
+                  type="email"
+                  id="email"
+                  name="email"
+                  value={settingsForm.email}
+                  onChange={handleSettingsChange}
+                  placeholder="Enter your email"
+                  className="profile-form-input"
+                  required
+                />
+              </div>
+
+              <div className="profile-form-group profile-form-full">
+                <label htmlFor="phone" className="profile-form-label">Phone Number</label>
+                <input
+                  type="tel"
+                  id="phone"
+                  name="phone"
+                  value={settingsForm.phone || ''}
+                  onChange={handleSettingsChange}
+                  placeholder="Enter your phone number"
+                  className="profile-form-input"
+                />
+              </div>
             </div>
-            <div className="sf-field">
-              <label className="sf-label">Profile Picture URL</label>
-              <input
-                type="url"
-                name="profilePic"
-                value={settingsForm.profilePic}
-                onChange={handleSettingsChange}
-                className="sf-input"
-              />
+
+            {/* Password Section */}
+            <div className="profile-password-section">
+              <div className="profile-form-group">
+                <label htmlFor="oldPassword" className="profile-form-label">Old Password</label>
+                <input
+                  type="password"
+                  id="oldPassword"
+                  name="oldPassword"
+                  value={settingsForm.oldPassword}
+                  onChange={handleSettingsChange}
+                  placeholder="Enter old password"
+                  className="profile-form-input"
+                />
+              </div>
+              <div className="profile-form-group">
+                <label htmlFor="newPassword" className="profile-form-label">New Password</label>
+                <input
+                  type="password"
+                  id="newPassword"
+                  name="newPassword"
+                  value={settingsForm.newPassword}
+                  onChange={handleSettingsChange}
+                  placeholder="Enter new password"
+                  className="profile-form-input"
+                />
+              </div>
             </div>
-            <div className="sf-field sf-field-gap">
-              <label className="sf-label">Old Password</label>
-              <input
-                type="password"
-                name="oldPassword"
-                value={settingsForm.oldPassword}
-                onChange={handleSettingsChange}
-                className="sf-input"
-              />
+
+            {/* Save Button */}
+            <div className="profile-form-actions">
+              <button type="submit" className="profile-save-btn">
+                Save Changes
+              </button>
             </div>
-            <div className="sf-field">
-              <label className="sf-label">New Password</label>
-              <input
-                type="password"
-                name="newPassword"
-                value={settingsForm.newPassword}
-                onChange={handleSettingsChange}
-                className="sf-input"
-              />
-            </div>
-            <button type="submit" className="sf-save-btn">Save Profile</button>
           </form>
         </div>
 
-        {/* Right: Receiver Feedback */}
+        {/* Right: Receiver Feedback - Kept Intact */}
         <div className="settings-card">
           <h3 className="settings-card-title">Receiver Feedback</h3>
           <div className="sf-feedback-list">

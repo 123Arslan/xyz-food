@@ -28,15 +28,17 @@ const Login = () => {
       const data = response.data;
 
       // Log in globally using Context
-      login(data.token, data.username, data.is_donor, data.is_receiver, data.is_admin, rememberMe);
+      login(data.token, data.username, data.is_donor, data.is_receiver, data.is_admin, data.is_rider, data.account_status, rememberMe);
 
       setLoading(false);
 
-      // Role-Based Redirection
+      // Role-Based Redirection - automatic redirect based on role
       if (data.is_donor) {
         navigate('/donor-dashboard');
       } else if (data.is_receiver) {
         navigate('/receiver-dashboard');
+      } else if (data.is_rider) {
+        navigate('/rider-dashboard');
       } else if (data.is_admin) {
         navigate('/admin-dashboard');
       } else {

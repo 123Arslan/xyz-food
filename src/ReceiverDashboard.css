@@ -1,5 +1,241 @@
 /* ===== Receiver Dashboard Styles ===== */
 
+/* ===== Profile Settings Styles ===== */
+.profile-settings-container {
+  max-width: 600px;
+  margin: 0 auto;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 32px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  border: 1px solid #e2e8f0;
+}
+
+.profile-settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.profile-avatar-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.profile-avatar-preview {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.2);
+}
+
+.profile-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-avatar-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 32px;
+  font-weight: 700;
+}
+
+.avatar-initials {
+  font-size: 42px;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+
+.profile-avatar-upload {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.avatar-upload-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: #f0fdf4;
+  color: #059669;
+  border: 2px dashed #059669;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.avatar-upload-label:hover {
+  background: #dcfce7;
+  transform: translateY(-2px);
+}
+
+.upload-icon {
+  font-size: 18px;
+}
+
+.avatar-url-input {
+  width: 100%;
+  max-width: 300px;
+  padding: 10px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.avatar-url-input:focus {
+  outline: none;
+  border-color: #059669;
+  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.1);
+}
+
+.profile-form-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+
+.profile-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.profile-form-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.profile-form-input,
+.profile-form-select {
+  padding: 12px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 15px;
+  transition: all 0.2s;
+  background: #ffffff;
+}
+
+.profile-form-input:focus,
+.profile-form-select:focus {
+  outline: none;
+  border-color: #059669;
+  box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.1);
+}
+
+.profile-form-input:hover,
+.profile-form-select:hover {
+  border-color: #10b981;
+}
+
+.profile-form-actions {
+  display: flex;
+  justify-content: center;
+  padding-top: 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.profile-save-btn {
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  color: #ffffff;
+  padding: 14px 32px;
+  border: none;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 160px;
+  justify-content: center;
+}
+
+.profile-save-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(5, 150, 105, 0.4);
+}
+
+.profile-save-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.profile-save-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.btn-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Responsive Design */
+@media (min-width: 640px) {
+  .profile-form-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .profile-form-group:last-child {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 640px) {
+  .profile-settings-container {
+    padding: 20px;
+    border-radius: 12px;
+  }
+  
+  .profile-avatar-preview {
+    width: 100px;
+    height: 100px;
+  }
+  
+  .avatar-initials {
+    font-size: 36px;
+  }
+  
+  .profile-save-btn {
+    width: 100%;
+  }
+}
+
 .receiver-dashboard-page {
   width: 100%;
   min-height: 100vh;
@@ -673,57 +909,340 @@
   gap: 16px;
 }
 
+/* Standard Micro-Card Responsive Grid */
+.my-claims-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 24px;
+  width: 100%;
+}
+
 .claim-card {
-  background: white;
-  border-radius: 16px;
-  padding: 24px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  border: 1px solid #e8ecf1;
-  display: flex;
-  align-items: center;
-  gap: 20px;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  border: 1px solid #f1f5f9;
+  overflow: hidden;
   transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
 }
 
 .claim-card:hover {
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+  transform: translateY(-4px);
 }
 
-.claim-card-icon {
-  width: 52px;
-  height: 52px;
-  border-radius: 14px;
-  display: flex;
+/* Food Image Header */
+.claim-image-header {
+  position: relative;
+  width: 100%;
+  height: 160px;
+  overflow: hidden;
+}
+
+.claim-food-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-top-left-radius: 12px;
+  border-top-right-radius: 12px;
+}
+
+.claim-status-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  font-size: 24px;
-  flex-shrink: 0;
-  background: #f1f5f9;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
 }
 
-.claim-card-info {
+.claim-status-pending {
+  background: rgba(245, 158, 11, 0.9);
+  color: #ffffff;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.claim-status-ready {
+  background: rgba(59, 130, 246, 0.9);
+  color: #ffffff;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.claim-status-pickedup {
+  background: rgba(16, 185, 129, 0.9);
+  color: #ffffff;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.claim-status-completed {
+  background: rgba(99, 102, 241, 0.9);
+  color: #ffffff;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+/* Card Body */
+.claim-card-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   flex: 1;
-  min-width: 0;
 }
 
-.claim-card-name {
-  font-size: 16px;
+/* Title & Donor Info */
+.claim-header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.claim-title {
+  font-size: 18px;
   font-weight: 700;
-  color: #1e293b;
-  margin: 0 0 4px 0;
+  color: #0f172a;
+  margin: 0;
+  line-height: 1.3;
 }
 
-.claim-card-donor {
+.claim-donor {
   font-size: 13px;
   color: #64748b;
   margin: 0;
+  font-weight: 500;
 }
 
-.claim-card-right {
+/* Coordination Metadata */
+.claim-coordination {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.coordination-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.coordination-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.coordination-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.coordination-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.coordination-value {
+  font-size: 13px;
+  color: #0f172a;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+/* Feedback Section */
+.claim-feedback-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.feedback-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.feedback-submit-btn {
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.feedback-submit-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
+}
+
+.feedback-submitted {
   display: flex;
   align-items: center;
-  gap: 12px;
-  flex-shrink: 0;
+  gap: 8px;
+  padding: 10px;
+  background: #f0fdf4;
+  border-radius: 8px;
+  border: 1px solid #dcfce7;
+}
+
+.feedback-icon {
+  font-size: 18px;
+}
+
+.feedback-text {
+  font-size: 13px;
+  color: #059669;
+  font-weight: 600;
+}
+
+/* Action Buttons */
+.claim-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: auto;
+}
+
+.action-buttons-row {
+  display: flex;
+  gap: 8px;
+}
+
+.action-buttons-row .claim-btn {
+  flex: 1;
+}
+
+.claim-btn {
+  padding: 10px 16px;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.claim-btn:hover {
+  transform: scale(0.98);
+}
+
+.claim-btn:active {
+  transform: scale(0.95);
+}
+
+.claim-btn-chat {
+  background: #f1f5f9;
+  color: #0f172a;
+  border: 1px solid #e2e8f0;
+}
+
+.claim-btn-chat:hover {
+  background: #e2e8f0;
+}
+
+.claim-btn-message {
+  background: #f1f5f9;
+  color: #0f172a;
+  border: 1px solid #e2e8f0;
+}
+
+.claim-btn-message:hover {
+  background: #e2e8f0;
+}
+
+.claim-btn-complete {
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.25);
+}
+
+.claim-btn-complete:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.35);
+}
+
+.claim-btn-pickup {
+  background: white;
+  color: #0f172a;
+  border: 2px solid #e2e8f0;
+}
+
+.claim-btn-pickup:hover {
+  border-color: #059669;
+  color: #059669;
+}
+
+/* Completed Orders - Same Template with Disabled Actions */
+.claim-card.completed .claim-actions {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.claim-card.completed .claim-btn {
+  background: #f1f5f9;
+  color: #94a3b8;
+  border-color: #e2e8f0;
+  cursor: not-allowed;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .my-claims-grid {
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+  }
+  
+  .claim-image-header {
+    height: 140px;
+  }
+  
+  .claim-card-body {
+    padding: 14px;
+    gap: 12px;
+  }
+  
+  .claim-title {
+    font-size: 16px;
+  }
+  
+  .claim-donor {
+    font-size: 12px;
+  }
+  
+  .action-buttons-row {
+    flex-direction: column;
+  }
+  
+  .claim-btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .my-claims-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .claim-image-header {
+    height: 120px;
+  }
 }
 
 /* Status badges */
@@ -1303,6 +1822,67 @@
   background: #f3f4f6;
   color: #374151;
   border: 1px solid #6b7280;
+}
+
+/* ─── Distance Badge Styles ─────────────────────────────────── */
+.distance-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 6px 12px;
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  color: #ffffff;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  box-shadow: 0 2px 8px rgba(5, 150, 105, 0.3);
+}
+
+/* ─── Map Container Styles ──────────────────────────────────── */
+.food-item-map-container {
+  margin-top: 16px;
+  padding: 16px;
+  background: #f9fafb;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.food-item-map-btn {
+  background: #f3f4f6;
+  color: #374151;
+  padding: 10px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-right: 8px;
+}
+
+.food-item-map-btn:hover {
+  background: #e5e7eb;
+  border-color: #9ca3af;
+}
+
+.food-item-footer {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
 }
 
 .footer-link-btn:hover {

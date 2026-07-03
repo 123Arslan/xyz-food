@@ -1,28 +1,52 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import axios from 'axios';
+import { useAuth } from '../AuthContext';
 import './Leaderboard.css';
 
 const Leaderboard = () => {
-  // ─── Mock Data: Top 10 Donors ───────────────────────────────
-  const topDonors = useMemo(() => [
-    { id: 1, name: 'Ahmed Khan', points: 1250, donations: 25, badge: 'Platinum Guardian' },
-    { id: 2, name: 'Fatima Ali', points: 980, donations: 19, badge: 'Golden Hero' },
-    { id: 3, name: 'Omar Hassan', points: 850, donations: 17, badge: 'Golden Hero' },
-    { id: 4, name: 'You (Current User)', points: 150, donations: 3, badge: 'Silver Donor' },
-    { id: 5, name: 'Aisha Malik', points: 720, donations: 14, badge: 'Golden Hero' },
-    { id: 6, name: 'Bilal Ahmed', points: 650, donations: 13, badge: 'Golden Hero' },
-    { id: 7, name: 'Zara Sheikh', points: 550, donations: 11, badge: 'Silver Donor' },
-    { id: 8, name: 'Imran Qureshi', points: 480, donations: 9, badge: 'Silver Donor' },
-    { id: 9, name: 'Sana Khan', points: 420, donations: 8, badge: 'Silver Donor' },
-    { id: 10, name: 'Rashid Ali', points: 350, donations: 7, badge: 'Silver Donor' },
-  ], []);
-
-  // ─── Current User Metrics ───────────────────────────────────
-  const currentUserMetrics = useMemo(() => ({
-    totalPoints: 150,
-    rank: 4,
+  const { token, username } = useAuth();
+  const [topDonors, setTopDonors] = useState([]);
+  const [currentUserMetrics, setCurrentUserMetrics] = useState({
+    totalPoints: 0,
+    rank: '-',
     badge: 'Silver Donor',
-    donations: 3,
-  }), []);
+    donations: 0,
+  });
+  const [isLoading, setIsLoading] = useState(true);
+
+  // ─── Fetch Leaderboard Data ───────────────────────────────
+  useEffect(() => {
+    const fetchLeaderboard = async () => {
+      try {
+        const response = await axios.get('http://localhost:8000/api/leaderboard/', {
+          headers: token ? { Authorization: `Token ${token}` } : {}
+        });
+        
+        const leaderboardData = response.data;
+        setTopDonors(leaderboardData);
+        
+        // Find current user in leaderboard
+        const currentUserEntry = leaderboardData.find(donor => 
+          donor.name === username || donor.name.includes(username)
+        );
+        
+        if (currentUserEntry) {
+          setCurrentUserMetrics({
+            totalPoints: currentUserEntry.points,
+            rank: currentUserEntry.rank,
+            badge: currentUserEntry.badge,
+            donations: currentUserEntry.donations,
+          });
+        }
+      } catch (err) {
+        console.error('Error fetching leaderboard:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchLeaderboard();
+  }, [token, username]);
 
   // ─── Badge Helper ──────────────────────────────────────────
   const getBadgeIcon = (badge) => {
@@ -60,6 +84,16 @@ const Leaderboard = () => {
 
   // ─── Points Calculation Logic (50 points per donation) ─────
   const calculatePoints = (donations) => donations * 50;
+
+  if (isLoading) {
+    return (
+      <div className="leaderboard-section">
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '200px' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '9999px', border: '5px solid #e5e7eb', borderTop: '5px solid #10b981' }}></div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="leaderboard-section">

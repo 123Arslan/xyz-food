@@ -6,8 +6,8 @@ from rest_framework.authentication import TokenAuthentication
 from rest_framework.authtoken.models import Token
 from django.contrib.auth.models import User
 from django.db import connection
-from .models import FoodListing, Message, Donation, Feedback
-from .serializers import SignupSerializer, UserSerializer, LoginSerializer, FoodListingSerializer, MessageSerializer, DonationSerializer, FeedbackSerializer
+from .models import FoodListing, Message, Donation, Feedback, Notification
+from .serializers import SignupSerializer, UserSerializer, LoginSerializer, FoodListingSerializer, MessageSerializer, DonationSerializer, FeedbackSerializer, NotificationSerializer
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -34,13 +34,18 @@ def login(request):
         is_donor = False
         is_receiver = False
         is_admin = False
+        is_rider = False
+        account_status = 'Pending'
         try:
             profile = user.profile
             account_type = profile.account_type.lower()
+            account_status = profile.account_status
             if account_type in ['donor', 'organization']:
                 is_donor = True
             elif account_type == 'receiver':
                 is_receiver = True
+            elif account_type == 'rider':
+                is_rider = True
             elif account_type == 'admin' or user.is_staff or user.is_superuser:
                 is_admin = True
         except Exception:
@@ -52,7 +57,9 @@ def login(request):
             "username": user.email,
             "is_donor": is_donor,
             "is_receiver": is_receiver,
-            "is_admin": is_admin
+            "is_admin": is_admin,
+            "is_rider": is_rider,
+            "account_status": account_status
         }, status=status.HTTP_200_OK)
 
     errors = serializer.errors
@@ -197,11 +204,21 @@ def claim_food(request, food_id):
                 receiver_id=request.user,
                 food_id=food_listing
             )
-            food_listing.status = 'Pending'
+            food_listing.status = 'Claimed'
             food_listing.save()
+            
+            # Create notification for donor
+            Notification.objects.create(
+                recipient=food_listing.user,
+                notification_type='claim',
+                food_listing=food_listing,
+                message=f"Your food listing '{food_listing.food_title}' has been claimed by {request.user.profile.full_name or request.user.email}."
+            )
+            
             return Response({
                 "message": "Food claimed successfully",
-                "donation": DonationSerializer(donation).data
+                "donation": DonationSerializer(donation).data,
+                "food_status": food_listing.status
             }, status=status.HTTP_200_OK)
     except FoodListing.DoesNotExist:
         return Response({"error": "Food listing is not available or does not exist."}, status=status.HTTP_400_BAD_REQUEST)
@@ -214,8 +231,8 @@ def complete_transaction(request, food_id):
     try:
         with transaction.atomic():
             food_listing = FoodListing.objects.select_for_update().get(id=food_id)
-            if food_listing.status != 'Pending':
-                return Response({"error": "Food listing is not in Pending status."}, status=status.HTTP_400_BAD_REQUEST)
+            if food_listing.status != 'Out for Delivery':
+                return Response({"error": "Food listing is not in Out for Delivery status."}, status=status.HTTP_400_BAD_REQUEST)
             
             donation = Donation.objects.filter(food_id=food_listing).first()
             if not donation:
@@ -226,9 +243,19 @@ def complete_transaction(request, food_id):
             
             food_listing.status = 'Completed'
             food_listing.save()
+            
+            # Award gamification points to donor
+            try:
+                donor_profile = food_listing.user.profile
+                donor_profile.reward_points += 50
+                donor_profile.save()
+            except Exception:
+                pass
+            
             return Response({
                 "message": "Transaction completed successfully",
-                "status": food_listing.status
+                "status": food_listing.status,
+                "reward_points_earned": 50
             }, status=status.HTTP_200_OK)
     except FoodListing.DoesNotExist:
         return Response({"error": "Food listing not found."}, status=status.HTTP_404_NOT_FOUND)
@@ -436,5 +463,151 @@ def chat_history(request, listing_id):
         "food_listing_id": food_listing.id,
         "other_user": UserSerializer(receiver if request.user.id == donor.id else donor).data,
     }, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def rider_accept_delivery(request, food_id):
+    try:
+        with transaction.atomic():
+            food_listing = FoodListing.objects.select_for_update().get(id=food_id)
+            if food_listing.status != 'Claimed':
+                return Response({"error": "Food listing is not in Claimed status."}, status=status.HTTP_400_BAD_REQUEST)
+            
+            food_listing.status = 'Out for Delivery'
+            food_listing.save()
+            
+            # Get donation to notify donor and receiver
+            donation = Donation.objects.filter(food_id=food_listing).first()
+            if donation:
+                # Notify donor
+                Notification.objects.create(
+                    recipient=food_listing.user,
+                    notification_type='delivery',
+                    food_listing=food_listing,
+                    message=f"Rider {request.user.profile.full_name or request.user.email} has accepted delivery for '{food_listing.food_title}'."
+                )
+                # Notify receiver
+                Notification.objects.create(
+                    recipient=donation.receiver_id,
+                    notification_type='delivery',
+                    food_listing=food_listing,
+                    message=f"Rider {request.user.profile.full_name or request.user.email} is on the way with your food '{food_listing.food_title}'."
+                )
+            
+            return Response({
+                "message": "Delivery accepted successfully",
+                "status": food_listing.status,
+                "rider_name": request.user.profile.full_name
+            }, status=status.HTTP_200_OK)
+    except FoodListing.DoesNotExist:
+        return Response({"error": "Food listing not found."}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def rider_available_deliveries(request):
+    listings = FoodListing.objects.filter(status='Claimed').order_by('-created_at')
+    serializer = FoodListingSerializer(listings, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def rider_my_deliveries(request):
+    listings = FoodListing.objects.filter(status='Out for Delivery').order_by('-created_at')
+    serializer = FoodListingSerializer(listings, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsAdminRole])
+def admin_approve_user(request, user_id):
+    try:
+        user = User.objects.get(id=user_id)
+        profile = user.profile
+        profile.account_status = 'Active'
+        profile.save()
+        return Response({"message": f"User {user.email} has been approved.", "account_status": "Active"}, status=status.HTTP_200_OK)
+    except User.DoesNotExist:
+        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsAdminRole])
+def admin_reject_user(request, user_id):
+    try:
+        user = User.objects.get(id=user_id)
+        profile = user.profile
+        profile.account_status = 'Rejected'
+        profile.save()
+        return Response({"message": f"User {user.email} has been rejected.", "account_status": "Rejected"}, status=status.HTTP_200_OK)
+    except User.DoesNotExist:
+        return Response({"error": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_leaderboard(request):
+    try:
+        # Get all users with profiles and reward points
+        profiles = Profile.objects.filter(account_type__in=['Donor', 'Organization']).select_related('user').order_by('-reward_points')
+        
+        leaderboard_data = []
+        for idx, profile in enumerate(profiles[:10], 1):  # Top 10
+            donation_count = FoodListing.objects.filter(user=profile.user, status='Completed').count()
+            points = profile.reward_points or 0
+            
+            # Determine badge based on points
+            if points >= 1000:
+                badge = 'Platinum Guardian'
+            elif points >= 500:
+                badge = 'Golden Hero'
+            else:
+                badge = 'Silver Donor'
+            
+            leaderboard_data.append({
+                'rank': idx,
+                'id': profile.user.id,
+                'name': profile.full_name or profile.user.email,
+                'points': points,
+                'donations': donation_count,
+                'badge': badge
+            })
+        
+        return Response(leaderboard_data, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_notifications(request):
+    try:
+        notifications = Notification.objects.filter(recipient=request.user).order_by('-created_at')
+        serializer = NotificationSerializer(notifications, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def mark_notification_read(request, notification_id):
+    try:
+        notification = Notification.objects.get(id=notification_id, recipient=request.user)
+        notification.is_read = True
+        notification.save()
+        return Response({"message": "Notification marked as read"}, status=status.HTTP_200_OK)
+    except Notification.DoesNotExist:
+        return Response({"error": "Notification not found"}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

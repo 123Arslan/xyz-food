@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 
 const ProtectedRoute = ({ children, allowedRole }) => {
-  const { isAuthenticated, isDonor, isReceiver, isAdmin, loading } = useAuth();
+  const { isAuthenticated, isDonor, isReceiver, isAdmin, isRider, loading } = useAuth();
 
   if (loading) {
     return (
@@ -18,20 +18,40 @@ const ProtectedRoute = ({ children, allowedRole }) => {
   }
 
   if (allowedRole === 'donor' && !isDonor) {
-    // Redirect receiver or admin to their correct dashboards
+    // Redirect receiver, admin, or rider to their correct dashboards
     if (isReceiver) {
       return <Navigate to="/receiver-dashboard" replace />;
     }
     if (isAdmin) {
       return <Navigate to="/admin-dashboard" replace />;
     }
+    if (isRider) {
+      return <Navigate to="/rider-dashboard" replace />;
+    }
     return <Navigate to="/" replace />;
   }
 
   if (allowedRole === 'receiver' && !isReceiver) {
-    // Redirect donor or admin to their correct dashboards
+    // Redirect donor, admin, or rider to their correct dashboards
     if (isDonor) {
       return <Navigate to="/donor-dashboard" replace />;
+    }
+    if (isAdmin) {
+      return <Navigate to="/admin-dashboard" replace />;
+    }
+    if (isRider) {
+      return <Navigate to="/rider-dashboard" replace />;
+    }
+    return <Navigate to="/" replace />;
+  }
+
+  if (allowedRole === 'rider' && !isRider) {
+    // Redirect donor, receiver, or admin to their correct dashboards
+    if (isDonor) {
+      return <Navigate to="/donor-dashboard" replace />;
+    }
+    if (isReceiver) {
+      return <Navigate to="/receiver-dashboard" replace />;
     }
     if (isAdmin) {
       return <Navigate to="/admin-dashboard" replace />;
@@ -40,12 +60,15 @@ const ProtectedRoute = ({ children, allowedRole }) => {
   }
 
   if (allowedRole === 'admin' && !isAdmin) {
-    // Redirect donor or receiver to their correct dashboards
+    // Redirect donor, receiver, or rider to their correct dashboards
     if (isDonor) {
       return <Navigate to="/donor-dashboard" replace />;
     }
     if (isReceiver) {
       return <Navigate to="/receiver-dashboard" replace />;
+    }
+    if (isRider) {
+      return <Navigate to="/rider-dashboard" replace />;
     }
     return <Navigate to="/" replace />;
   }

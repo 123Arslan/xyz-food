@@ -156,6 +156,7 @@ const SignUp = () => {
               <option value="Receiver">Receiver</option>
               <option value="Organization">Organization</option>
               <option value="Admin">Admin</option>
+              <option value="Rider">Rider</option>
             </select>
           </div>
 
