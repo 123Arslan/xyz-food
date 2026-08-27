@@ -322,7 +322,11 @@ const ReceiverDashboard = () => {
   }, [searchLocation, foodType, userLatitude, userLongitude]);
 
   useEffect(() => {
-    fetchMyClaims();
+    if (activeTab === 'claims') {
+      fetchMyClaims();
+    } else if (activeTab === 'food') {
+      fetchAvailableFood();
+    }
   }, [activeTab]);
 
   // ─── API Calls ───────────────────────────────────────────
@@ -353,24 +357,40 @@ const ReceiverDashboard = () => {
     try {
       const response = await getMyClaims();
       if (response.success) {
-        const mappedClaims = response.data.map(donation => {
-          const listing = donation.food_listing || {};
-          const donorUser = donation.donor || {};
-          const donorProfile = donorUser.profile || {};
-          return {
-            id: donation.id,
-            foodId: listing.id,
-            name: listing.food_title || 'Food Item',
-            donor: donorProfile.full_name || donorUser.username || 'Donor',
-            donorId: donorUser.id,
-            donorPhone: donorProfile.contact_phone || listing.contact_phone || 'N/A',
-            donorInstructions: donorProfile.instructions || listing.description || 'No instructions provided.',
-            status: listing.status || 'Pending',
-            icon: getFoodIcon(listing.food_type),
-            rating: 0,
-            feedbackSubmitted: false,
-          };
-        });
+        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        const currentUserId = user.id;
+
+        const mappedClaims = response.data
+          .filter(donation => {
+            const listing = donation.food_listing || {};
+            // Keep claims that have a valid claim status (Pending, Claimed, Picked Up, Completed, Ready for Pickup, Out for Delivery)
+            const validStatus = ['Pending', 'Claimed', 'Picked Up', 'Completed', 'Ready for Pickup', 'Out for Delivery'].includes(listing.status);
+            
+            // Check association with current user ID
+            const receiverUser = donation.receiver || {};
+            const isAssocWithUser = !currentUserId || !receiverUser.id || receiverUser.id === currentUserId;
+
+            return validStatus && isAssocWithUser;
+          })
+          .map(donation => {
+            const listing = donation.food_listing || {};
+            const donorUser = donation.donor || {};
+            const donorProfile = donorUser.profile || {};
+            return {
+              id: donation.id,
+              foodId: listing.id,
+              name: listing.food_title || 'Food Item',
+              donor: donorProfile.full_name || donorUser.username || 'Donor',
+              donorId: donorUser.id,
+              donorPhone: donorProfile.contact_phone || listing.contact_phone || 'N/A',
+              donorInstructions: donorProfile.instructions || listing.description || 'No instructions provided.',
+              status: listing.status || 'Pending',
+              icon: getFoodIcon(listing.food_type),
+              rating: 0,
+              feedbackSubmitted: false,
+              foodImage: listing.food_image_url || listing.image_url || listing.image || null,
+            };
+          });
         setClaims(mappedClaims);
       }
     } catch (err) {
@@ -390,7 +410,8 @@ const ReceiverDashboard = () => {
 
   // ─── Process Food Items with Expiry Info & Sorting ───────────
   const processedFoodItems = useMemo(() => {
-    const itemsWithExpiry = foodItems.map(item => {
+    const unclaimed = foodItems.filter(item => item.status === 'Available');
+    const itemsWithExpiry = unclaimed.map(item => {
       const donorCoords = getCoordinatesFromLocation(item.pickup_location);
       const userCoords = userLatitude && userLongitude 
         ? { lat: userLatitude, lng: userLongitude }
@@ -448,6 +469,7 @@ const ReceiverDashboard = () => {
         });
         await fetchAvailableFood();
         await fetchMyClaims();
+        setActiveTab('claims');
       } else {
         const errMsg = response.error?.error || response.error?.detail || 'Failed to claim food.';
         setToast({ icon: '❌', message: errMsg });
@@ -612,22 +634,15 @@ const ReceiverDashboard = () => {
                 {item.expiryInfo.isExpiringSoon && item.status === 'Available' && (
                   <div className="critical-expiry-badge">⚠️ EXPIRING SOON!</div>
                 )}
-                {item.food_image_url ? (
-                  <img
-                    src={item.food_image_url}
-                    alt={item.food_title}
-                    className="food-item-image"
-                    onError={(e) => {
-                      e.target.onerror = null;
-                      e.target.src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80";
-                    }}
-                  />
-                ) : (
-                  <div className="food-item-no-image">
-                    <span className="food-item-no-image-icon">🍛</span>
-                    <span>No Image</span>
-                  </div>
-                )}
+                <img
+                  src={item.food_image_url || item.image_url || item.image || '/default-food.jpg'}
+                  alt={item.food_title}
+                  className="food-item-image"
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80";
+                  }}
+                />
                 <span className={`food-item-badge ${
                   item.food_type === 'Veg' ? 'badge-veg' :
                   item.food_type === 'Non-Veg' ? 'badge-nonveg' :
@@ -760,9 +775,13 @@ const ReceiverDashboard = () => {
               {/* Food Image Header */}
               <div className="claim-image-header">
                 <img 
-                  src={claim.foodImage || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80'} 
+                  src={claim.foodImage || '/default-food.jpg'} 
                   alt={claim.name}
                   className="claim-food-image"
+                  onError={(e) => {
+                    e.target.onerror = null;
+                    e.target.src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80";
+                  }}
                 />
                 <span className={`claim-status-badge ${getStatusClass(claim.status)}`}>
                   {claim.status}

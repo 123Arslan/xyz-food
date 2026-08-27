@@ -88,12 +88,10 @@ export const getFoodListings = async () => {
   }
 };
 
-export const createFoodListing = async (listingData) => {
+export const createFoodListing = async (listingData, isFormData = false) => {
   try {
     const authToken = getAuthToken();
-    const headers = {
-      'Content-Type': 'application/json',
-    };
+    const headers = {};
     
     if (authToken) {
       headers.Authorization = `Token ${authToken}`;
@@ -102,12 +100,17 @@ export const createFoodListing = async (listingData) => {
       console.warn('[API] No auth token found in storage');
     }
 
-    console.log('[API] Sending payload:', listingData);
+    // Only set Content-Type for JSON, not FormData (browser sets it automatically)
+    if (!isFormData) {
+      headers['Content-Type'] = 'application/json';
+    }
+
+    console.log('[API] Sending payload:', isFormData ? 'FormData' : listingData);
     
     const response = await fetch(`${API_BASE_URL}/food-listings/`, {
       method: 'POST',
       headers,
-      body: JSON.stringify(listingData),
+      body: isFormData ? listingData : JSON.stringify(listingData),
     });
     
     const data = await response.json();
@@ -317,6 +320,39 @@ export const toggleBanUser = async (userId) => {
         'Content-Type': 'application/json',
         ...getAuthHeaders(),
       },
+    });
+    const data = await response.json();
+    return response.ok ? { success: true, data } : { success: false, error: data };
+  } catch (error) {
+    return { success: false, error: 'Network error or server down' };
+  }
+};
+
+export const getUserProfile = async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/profile/`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+    });
+    const data = await response.json();
+    return response.ok ? { success: true, data } : { success: false, error: data };
+  } catch (error) {
+    return { success: false, error: 'Network error or server down' };
+  }
+};
+
+export const updateUserProfile = async (profileData) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/profile/`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify(profileData),
     });
     const data = await response.json();
     return response.ok ? { success: true, data } : { success: false, error: data };

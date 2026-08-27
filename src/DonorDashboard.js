@@ -6,6 +6,7 @@ import './DonorDashboard.css';
 import './Home.css';
 import DonorFoodListingManager from './components/DonorFoodListingManager';
 import Leaderboard from './components/Leaderboard';
+import { getUserProfile, updateUserProfile } from './api';
 
 const DonorDashboard = () => {
   const [activeTab, setActiveTab] = useState('settings');
@@ -15,9 +16,29 @@ const DonorDashboard = () => {
     name: 'John Doe',
     email: 'johndoe@example.com',
     profilePic: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+    phone: '',
     oldPassword: '',
     newPassword: ''
   });
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      const result = await getUserProfile();
+      if (result.success) {
+        setSettingsForm({
+          name: result.data.name || '',
+          email: result.data.email || '',
+          phone: result.data.phone || '',
+          profilePic: result.data.profilePic || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80',
+          oldPassword: '',
+          newPassword: ''
+        });
+      } else {
+        console.error('Failed to fetch profile:', result.error);
+      }
+    };
+    fetchProfile();
+  }, []);
 
 
   // Mock Data
@@ -53,11 +74,40 @@ const DonorDashboard = () => {
 
   const handleSettingsChange = (e) => setSettingsForm({ ...settingsForm, [e.target.name]: e.target.value });
 
-  const handleSettingsSubmit = (e) => {
+  const handleSettingsSubmit = async (e) => {
     e.preventDefault();
     console.log('Settings updated:', settingsForm);
-    alert('Profile updated successfully!');
-    setSettingsForm({ ...settingsForm, oldPassword: '', newPassword: '' });
+    
+    const result = await updateUserProfile({
+      name: settingsForm.name,
+      email: settingsForm.email,
+      phone: settingsForm.phone,
+      profilePic: settingsForm.profilePic,
+      oldPassword: settingsForm.oldPassword,
+      newPassword: settingsForm.newPassword
+    });
+
+    if (result.success) {
+      alert('Profile updated successfully!');
+      setSettingsForm(prev => ({
+        ...prev,
+        name: result.data.user.profile.full_name || prev.name,
+        email: result.data.user.email || prev.email,
+        phone: result.data.user.profile.contact_phone || prev.phone,
+        profilePic: result.data.user.profile.profile_pic || prev.profilePic,
+        oldPassword: '',
+        newPassword: ''
+      }));
+      if (result.data.token) {
+        localStorage.setItem('token', result.data.token);
+        localStorage.setItem('authToken', result.data.token);
+      }
+      if (result.data.user.email) {
+        localStorage.setItem('username', result.data.user.email);
+      }
+    } else {
+      alert(result.error?.error || result.error || 'Failed to update profile. Please try again.');
+    }
   };
 
   const renderOverview = () => (

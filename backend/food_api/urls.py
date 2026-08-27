@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import signup, login, get_users, test_db, FoodListingListCreateView, FoodListingDetailView, get_food, claim_food, complete_transaction, my_claims, post_feedback, admin_stats, admin_listings, admin_delete_listing, admin_users, admin_toggle_ban_user, send_message, chat_history, rider_accept_delivery, rider_available_deliveries, rider_my_deliveries, admin_approve_user, admin_reject_user, get_leaderboard, get_notifications, mark_notification_read
+from .views import signup, login, get_users, test_db, FoodListingListCreateView, FoodListingDetailView, get_food, claim_food, complete_transaction, my_claims, post_feedback, admin_stats, admin_listings, admin_delete_listing, admin_users, admin_toggle_ban_user, send_message, chat_history, rider_accept_delivery, rider_available_deliveries, rider_my_deliveries, admin_approve_user, admin_reject_user, get_leaderboard, get_notifications, mark_notification_read, user_profile
 
 urlpatterns = [
     path('signup/', signup, name='signup'),
@@ -28,4 +28,5 @@ urlpatterns = [
     path('notifications/<int:notification_id>/read/', mark_notification_read, name='mark_notification_read'),
     path('chat/send/', send_message, name='send_message'),
     path('chat/history/<int:listing_id>/', chat_history, name='chat_history'),
+    path('profile/', user_profile, name='user_profile'),
 ]

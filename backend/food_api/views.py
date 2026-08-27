@@ -6,7 +6,7 @@ from rest_framework.authentication import TokenAuthentication
 from rest_framework.authtoken.models import Token
 from django.contrib.auth.models import User
 from django.db import connection
-from .models import FoodListing, Message, Donation, Feedback, Notification
+from .models import Profile, FoodListing, Message, Donation, Feedback, Notification
 from .serializers import SignupSerializer, UserSerializer, LoginSerializer, FoodListingSerializer, MessageSerializer, DonationSerializer, FeedbackSerializer, NotificationSerializer
 
 @api_view(['POST'])
@@ -609,5 +609,67 @@ def mark_notification_read(request, notification_id):
         return Response({"error": "Notification not found"}, status=status.HTTP_404_NOT_FOUND)
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET', 'PUT', 'PATCH'])
+@permission_classes([IsAuthenticated])
+def user_profile(request):
+    user = request.user
+    profile, created = Profile.objects.get_or_create(user=user)
+
+    if request.method == 'GET':
+        return Response({
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "name": profile.full_name or "",
+            "phone": profile.contact_phone or "",
+            "profilePic": profile.profile_pic or "",
+        }, status=status.HTTP_200_OK)
+
+    elif request.method in ['PUT', 'PATCH']:
+        data = request.data
+        
+        # Update Profile fields
+        if 'name' in data:
+            profile.full_name = data['name']
+        if 'phone' in data:
+            profile.contact_phone = data['phone']
+        if 'profilePic' in data:
+            profile.profile_pic = data['profilePic']
+        profile.save()
+
+        # Update User fields
+        if 'email' in data:
+            user.email = data['email']
+            user.username = data['email']  # username is email in this project
+        
+        # Check and update password if provided
+        if 'newPassword' in data and data['newPassword']:
+            old_password = data.get('oldPassword')
+            if old_password:
+                if not user.check_password(old_password):
+                    return Response({"error": "Incorrect old password"}, status=status.HTTP_400_BAD_REQUEST)
+            user.set_password(data['newPassword'])
+            
+        user.save()
+
+        # Ensure token exists
+        token, created = Token.objects.get_or_create(user=user)
+
+        return Response({
+            "token": token.key,
+            "user": {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "profile": {
+                    "full_name": profile.full_name,
+                    "contact_phone": profile.contact_phone,
+                    "profile_pic": profile.profile_pic,
+                }
+            },
+            "message": "Profile updated successfully"
+        }, status=status.HTTP_200_OK)
 
 

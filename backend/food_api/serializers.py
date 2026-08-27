@@ -7,7 +7,7 @@ from .models import Profile, FoodListing, Donation, Feedback, Message, Notificat
 class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
-        fields = ['full_name', 'account_type', 'account_status', 'contact_phone', 'instructions', 'reward_points', 'created_at']
+        fields = ['full_name', 'account_type', 'account_status', 'contact_phone', 'instructions', 'reward_points', 'created_at', 'profile_pic']
 
 class UserSerializer(serializers.ModelSerializer):
     profile = ProfileSerializer(read_only=True)

@@ -253,7 +253,7 @@ const AdminDashboard = () => {
 
   const renderListings = () => (
     <div className="admin-content-section">
-      <div className="admin-grid">
+      <div className="admin-grid">{/* 
         <div className="admin-card">
           <h3 className="card-title">Post Food (On behalf of Donor)</h3>
           <form onSubmit={handlePostSubmit} className="admin-form">
@@ -271,7 +271,7 @@ const AdminDashboard = () => {
             </div>
             <button type="submit" className="admin-btn">Post Listing</button>
           </form>
-        </div>
+        </div>*/}
 
         <div className="admin-card span-full">
           <h3 className="card-title">All Listings</h3>

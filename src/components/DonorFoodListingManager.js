@@ -48,6 +48,11 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
   const [statusType, setStatusType] = useState('error'); // 'error' | 'success'
   const [loading, setLoading] = useState(false);
   const [chatTarget, setChatTarget] = useState(null);
+  
+  // Image input state
+  const [imageInputMode, setImageInputMode] = useState('url'); // 'url' | 'upload'
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState('');
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -113,6 +118,49 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
   const handlePostChange = (event) => {
     const { name, value } = event.target;
     setPostForm((prev) => ({ ...prev, [name]: value }));
+    
+    // Handle URL preview
+    if (name === 'food_image_url' && value) {
+      setImagePreviewUrl(value);
+    } else if (name === 'food_image_url' && !value) {
+      setImagePreviewUrl('');
+    }
+  };
+
+  /* ── Image file handlers ── */
+  const handleFileSelect = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      setImageFile(file);
+      const previewUrl = URL.createObjectURL(file);
+      setImagePreviewUrl(previewUrl);
+    }
+  };
+
+  const handleDrop = (event) => {
+    event.preventDefault();
+    const file = event.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) {
+      setImageFile(file);
+      const previewUrl = URL.createObjectURL(file);
+      setImagePreviewUrl(previewUrl);
+    }
+  };
+
+  const handleDragOver = (event) => {
+    event.preventDefault();
+  };
+
+  const handleImageModeChange = (mode) => {
+    setImageInputMode(mode);
+    // Clear previous state when switching modes
+    if (mode === 'url') {
+      setImageFile(null);
+      setImagePreviewUrl(postForm.food_image_url);
+    } else {
+      setPostForm(prev => ({ ...prev, food_image_url: '' }));
+      setImagePreviewUrl('');
+    }
   };
 
   const handleEditChange = (event) => {
@@ -130,12 +178,24 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
     if (!form.expiry_time) return 'Please select the expiry time.';
     if (!form.pickup_location.trim()) return 'Please enter a pickup address.';
     if (!form.contact_phone.trim()) return 'Please enter a contact phone number.';
-    if (!form.food_image_url.trim()) return 'Please enter the food image URL.';
+    
+    // Validate image based on mode
+    if (imageInputMode === 'url' && !form.food_image_url.trim()) {
+      return 'Please enter the food image URL.';
+    }
+    if (imageInputMode === 'upload' && !imageFile) {
+      return 'Please upload a food image.';
+    }
+    
     return '';
   };
 
   /* ── Form Validity Check for Submit Button ── */
   const isFormValid = useMemo(() => {
+    const hasImage = imageInputMode === 'url' 
+      ? postForm.food_image_url.trim()
+      : imageFile;
+    
     return (
       postForm.food_title.trim() &&
       postForm.food_type &&
@@ -145,24 +205,35 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
       postForm.expiry_time &&
       postForm.pickup_location.trim() &&
       postForm.contact_phone.trim() &&
-      postForm.food_image_url.trim()
+      hasImage
     );
-  }, [postForm]);
+  }, [postForm, imageInputMode, imageFile]);
 
   /* ── Build the API payload — keys already match Django model ── */
-  const buildPayload = (form) => ({
-    food_title: form.food_title,
-    food_type: form.food_type,
-    quantity: form.quantity,
-    description: form.description,
-    pickup_time: formatDateTimeForBackend(form.pickup_time),
-    expiry_time: formatDateTimeForBackend(form.expiry_time),
-    pickup_location: form.pickup_location,
-    contact_phone: form.contact_phone,
-    food_image_url: form.food_image_url,
-    latitude: form.latitude,
-    longitude: form.longitude,
-  });
+  const buildPayload = (form) => {
+    const payload = {
+      food_title: form.food_title,
+      food_type: form.food_type,
+      quantity: form.quantity,
+      description: form.description,
+      pickup_time: formatDateTimeForBackend(form.pickup_time),
+      expiry_time: formatDateTimeForBackend(form.expiry_time),
+      pickup_location: form.pickup_location,
+      contact_phone: form.contact_phone,
+      latitude: form.latitude,
+      longitude: form.longitude,
+    };
+    
+    // Handle image based on mode
+    if (imageInputMode === 'url') {
+      payload.food_image_url = form.food_image_url;
+    } else if (imageFile) {
+      // For file upload, we'll include the file in FormData
+      payload.imageFile = imageFile;
+    }
+    
+    return payload;
+  };
 
   /* ── Create ── */
   const handlePostSubmit = async (event) => {
@@ -178,12 +249,37 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
     setStatusMessage('Posting Listing...');
     setStatusType('success');
 
-    const payload = buildPayload(postForm);
-    const response = await createFoodListing(payload);
+    let response;
+    
+    // Handle file upload with FormData
+    if (imageInputMode === 'upload' && imageFile) {
+      const formData = new FormData();
+      formData.append('food_title', postForm.food_title);
+      formData.append('food_type', postForm.food_type);
+      formData.append('quantity', postForm.quantity);
+      formData.append('description', postForm.description);
+      formData.append('pickup_time', formatDateTimeForBackend(postForm.pickup_time));
+      formData.append('expiry_time', formatDateTimeForBackend(postForm.expiry_time));
+      formData.append('pickup_location', postForm.pickup_location);
+      formData.append('contact_phone', postForm.contact_phone);
+      formData.append('food_image', imageFile);
+      if (postForm.latitude) formData.append('latitude', postForm.latitude);
+      if (postForm.longitude) formData.append('longitude', postForm.longitude);
+      
+      response = await createFoodListing(formData, true);
+    } else {
+      // Handle URL submission
+      const payload = buildPayload(postForm);
+      response = await createFoodListing(payload);
+    }
+    
     if (response.success) {
       setStatusMessage('Food listing created successfully!');
       setStatusType('success');
       setPostForm(initialFormState);
+      setImageFile(null);
+      setImagePreviewUrl('');
+      setImageInputMode('url');
       loadFoodListings();
       // Hook Type 1: Receiver Alert - Simulate notification to receivers
       toast.success('🍲 New food available near you!', {
@@ -445,17 +541,90 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
               />
             </div>
 
-            {/* Full-width: Food Image URL */}
+            {/* Full-width: Food Image */}
             <div className="donor-form-group donor-form-group-full">
-              <label className="donor-form-label">Food Image URL *</label>
-              <input
-                name="food_image_url"
-                value={postForm.food_image_url}
-                onChange={handlePostChange}
-                type="url"
-                placeholder="Paste an image URL for the food item"
-                className="donor-input"
-              />
+              <label className="donor-form-label">Food Image *</label>
+              
+              {/* Toggle Pills */}
+              <div className="image-input-toggle">
+                <button
+                  type="button"
+                  className={`toggle-pill ${imageInputMode === 'url' ? 'active' : ''}`}
+                  onClick={() => handleImageModeChange('url')}
+                >
+                  🔗 Paste Image URL
+                </button>
+                <button
+                  type="button"
+                  className={`toggle-pill ${imageInputMode === 'upload' ? 'active' : ''}`}
+                  onClick={() => handleImageModeChange('upload')}
+                >
+                  📤 Upload from Device
+                </button>
+              </div>
+
+              {/* URL Input */}
+              {imageInputMode === 'url' && (
+                <input
+                  name="food_image_url"
+                  value={postForm.food_image_url}
+                  onChange={handlePostChange}
+                  type="url"
+                  placeholder="Paste an image URL for the food item"
+                  className="donor-input"
+                />
+              )}
+
+              {/* File Upload Drop Zone */}
+              {imageInputMode === 'upload' && (
+                <div
+                  className="file-drop-zone"
+                  onDrop={handleDrop}
+                  onDragOver={handleDragOver}
+                >
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileSelect}
+                    className="file-input"
+                    id="food-image-upload"
+                  />
+                  <label htmlFor="food-image-upload" className="drop-zone-content">
+                    <span className="drop-zone-icon">📷</span>
+                    <span className="drop-zone-text">
+                      Click to browse or Drag & Drop food picture here
+                    </span>
+                    <span className="drop-zone-subtext">
+                      Supports Phone Gallery & Desktop Files
+                    </span>
+                  </label>
+                </div>
+              )}
+
+              {/* Image Preview */}
+              {imagePreviewUrl && (
+                <div className="image-preview-container">
+                  <span className="preview-label">Preview:</span>
+                  <img
+                    src={imagePreviewUrl}
+                    alt="Food preview"
+                    className="image-preview-thumbnail"
+                  />
+                  <button
+                    type="button"
+                    className="preview-clear-btn"
+                    onClick={() => {
+                      setImagePreviewUrl('');
+                      setImageFile(null);
+                      if (imageInputMode === 'url') {
+                        setPostForm(prev => ({ ...prev, food_image_url: '' }));
+                      }
+                    }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Status Message */}
@@ -600,7 +769,7 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
                         <span className={getStatusDotClass(listing.status)}></span>
                         {listing.status}
                       </span>
-                    </div>
+                    </div>p
                     {/* Food type pill */}
                     <div className="donor-card-type-pill">
                       <span>{listing.food_type}</span>

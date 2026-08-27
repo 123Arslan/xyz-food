@@ -22,6 +22,7 @@ class Profile(models.Model):
     contact_phone = models.CharField(max_length=30, blank=True, default='')
     instructions = models.TextField(blank=True, default='')
     reward_points = models.IntegerField(default=0)
+    profile_pic = models.TextField(blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
