@@ -125,7 +125,7 @@ const Home = () => {
               <div className="step-content">
                 <h3 className="step-title">Claim &amp; Collect</h3>
                 <p className="step-desc">
-                  Claim the food, coordinate pickup, and leave a rating.
+                  Claim the food, coordinate pickup, and leave a rating ?.
                 </p>
               </div>
             </div>
