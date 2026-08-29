@@ -123,21 +123,24 @@ export const createFoodListing = async (listingData, isFormData = false) => {
   }
 };
 
-export const updateFoodListing = async (listingId, listingData) => {
+export const updateFoodListing = async (listingId, listingData, isFormData = false) => {
   try {
     const authToken = getAuthToken();
-    const headers = {
-      'Content-Type': 'application/json',
-    };
-    
+    const headers = {};
+
     if (authToken) {
       headers.Authorization = `Token ${authToken}`;
+    }
+
+    // Only set Content-Type for JSON; let the browser set it for FormData
+    if (!isFormData) {
+      headers['Content-Type'] = 'application/json';
     }
 
     const response = await fetch(`${API_BASE_URL}/food-listings/${listingId}/`, {
       method: 'PATCH',
       headers,
-      body: JSON.stringify(listingData),
+      body: isFormData ? listingData : JSON.stringify(listingData),
     });
     const data = await response.json();
     console.log('[API] Update response:', response.status, data);
