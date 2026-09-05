@@ -161,6 +161,11 @@
   letter-spacing: 0.07em;
 }
 
+.donor-location-source-hint {
+  font-size: 0.75rem;
+  color: var(--clr-text-2);
+}
+
 /* ── Inputs ── */
 .donor-input,
 .donor-select,

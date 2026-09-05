@@ -1,15 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { toast } from 'react-toastify';
 import { useAuth } from '../AuthContext';
-import { apiRequest } from '../api';
+import { apiRequest, completeTransaction } from '../api';
 import './RiderDashboard.css';
 
 // ─── Constants ──────────────────────────────────────────────
+// Keyed by the FoodListing.status values returned by the backend.
 const RIDER_STATUS_BADGES = {
-  'Pending': { class: 'rider-status-pending', label: 'Pending Pickup', icon: '📦' },
-  'Accepted': { class: 'rider-status-accepted', label: 'Accepted', icon: '✅' },
-  'On the Way': { class: 'rider-status-onway', label: 'On the Way', icon: '🏍️' },
-  'Delivered': { class: 'rider-status-delivered', label: 'Delivered', icon: '🎉' },
+  'Claimed': { class: 'rider-status-pending', label: 'Pending Pickup', icon: '📦' },
+  'Out for Delivery': { class: 'rider-status-onway', label: 'On the Way', icon: '🏍️' },
+  'Completed': { class: 'rider-status-delivered', label: 'Delivered', icon: '🎉' },
+};
+
+const formatRiderDistance = (distanceKm) => {
+  if (typeof distanceKm !== 'number') return 'N/A';
+  return distanceKm < 1 ? `${Math.round(distanceKm * 1000)} m away` : `${distanceKm.toFixed(1)} km away`;
 };
 
 // ─── Helper Functions ──────────────────────────────────────
@@ -59,84 +64,59 @@ const RiderDashboard = () => {
   const [errorMsg, setErrorMsg] = useState('');
   const [acceptingId, setAcceptingId] = useState(null);
   const [activeTab, setActiveTab] = useState('available');
-  
+
+  // Rider's current coordinates, used to restrict deliveries to a 30km radius
+  const [riderLatitude, setRiderLatitude] = useState(null);
+  const [riderLongitude, setRiderLongitude] = useState(null);
+
   // Global Metrics
   const [totalDeliveries, setTotalDeliveries] = useState(0);
   const [impactScore, setImpactScore] = useState(0);
 
   // ─── Effects ─────────────────────────────────────────────
+  // Request the rider's current location on mount, with an IP-based fallback
   useEffect(() => {
-    // Initialize with simulation data
-    initializeSimulationData();
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setRiderLatitude(position.coords.latitude);
+          setRiderLongitude(position.coords.longitude);
+        },
+        async (error) => {
+          console.warn('Rider geolocation unavailable, trying IP-based fallback', error);
+          try {
+            const res = await fetch('https://ipapi.co/json/');
+            const data = await res.json();
+            if (data.latitude && data.longitude) {
+              setRiderLatitude(data.latitude);
+              setRiderLongitude(data.longitude);
+            }
+          } catch (e) {
+            console.warn('IP geolocation fallback failed', e);
+          }
+        }
+      );
+    }
   }, []);
 
-  // ─── Simulation Data Initialization ───────────────────────
-  const initializeSimulationData = () => {
-    const simulatedDeliveries = [
-      {
-        id: 'del-001',
-        donorName: 'PC Hotel Sialkot',
-        pickupLocation: 'PC Hotel Sialkot, Main Boulevard, Sialkot',
-        dropoffLocation: 'Al-Shifa Shelter Home, Civil Lines, Sialkot',
-        distance: '2.4 km',
-        foodItems: 'Chicken Biryani - 40 Packs',
-        status: 'Available',
-        expiryTime: 'Expires in 45 mins',
-        food_type: 'cooked meal',
-        food_title: 'Chicken Biryani',
-        quantity: '40 packs',
-        pickup_time: new Date().toISOString(),
-        expiry_time: new Date(Date.now() + 45 * 60000).toISOString(),
-        rider_status: 'Pending',
-        donorPhone: '+92 300 1234567',
-        receiverPhone: '+92 301 7654321'
-      },
-      {
-        id: 'del-002',
-        donorName: 'Marquee Hall',
-        pickupLocation: 'Marquee Hall, GT Road, Gujranwala',
-        dropoffLocation: 'Edhi Center, Sialkot Road, Gujranwala',
-        distance: '3.8 km',
-        foodItems: 'Mixed Rice & Curry - 25 Portions',
-        status: 'Available',
-        expiryTime: 'Expires in 30 mins',
-        food_type: 'cooked meal',
-        food_title: 'Mixed Rice & Curry',
-        quantity: '25 portions',
-        pickup_time: new Date().toISOString(),
-        expiry_time: new Date(Date.now() + 30 * 60000).toISOString(),
-        rider_status: 'Pending',
-        donorPhone: '+92 300 2345678',
-        receiverPhone: '+92 301 8765432'
-      },
-      {
-        id: 'del-003',
-        donorName: 'Fresh Bakery',
-        pickupLocation: 'Fresh Bakery, Sadar Bazaar, Sialkot',
-        dropoffLocation: 'Orphanage Home, Paris Road, Sialkot',
-        distance: '1.2 km',
-        foodItems: 'Bread & Pastries - 60 Items',
-        status: 'Available',
-        expiryTime: 'Expires in 1 hour',
-        food_type: 'baked goods',
-        food_title: 'Bread & Pastries',
-        quantity: '60 items',
-        pickup_time: new Date().toISOString(),
-        expiry_time: new Date(Date.now() + 60 * 60000).toISOString(),
-        rider_status: 'Pending',
-        donorPhone: '+92 300 3456789',
-        receiverPhone: '+92 301 9876543'
-      }
-    ];
-    
-    setDeliveries(simulatedDeliveries);
-  };
+  useEffect(() => {
+    if (activeTab === 'available') {
+      fetchAvailableDeliveries();
+    } else {
+      fetchMyDeliveries();
+    }
+  }, [activeTab, riderLatitude, riderLongitude]);
 
   // ─── API Calls ───────────────────────────────────────────
   const fetchAvailableDeliveries = async () => {
     setIsLoading(true);
     setErrorMsg('');
-    const response = await apiRequest('/rider/available-deliveries/');
+    const params = {};
+    if (riderLatitude != null && riderLongitude != null) {
+      params.lat = riderLatitude;
+      params.lng = riderLongitude;
+    }
+    const response = await apiRequest('/rider/available-deliveries/', { params });
     if (response.success) {
       setDeliveries(response.data);
     } else {
@@ -156,57 +136,34 @@ const RiderDashboard = () => {
   };
 
   // ─── Handlers ─────────────────────────────────────────────
-  const handleAcceptDelivery = (deliveryId) => {
+  const handleAcceptDelivery = async (deliveryId) => {
     setAcceptingId(deliveryId);
-    
-    // Find the delivery to accept
-    const deliveryToAccept = deliveries.find(d => d.id === deliveryId);
-    if (deliveryToAccept) {
-      // Move from available to active
-      const updatedDelivery = {
-        ...deliveryToAccept,
-        rider_status: 'Accepted',
-        status: 'In Transit'
-      };
-      
-      setDeliveries(deliveries.filter(d => d.id !== deliveryId));
-      setMyDeliveries([...myDeliveries, updatedDelivery]);
-      
-      toast.success(`🏍️ Delivery accepted! You are now assigned to this delivery.`, {
+    const response = await apiRequest(`/rider/accept-delivery/${deliveryId}/`, { method: 'POST', body: {} });
+    if (response.success) {
+      toast.success('🏍️ Delivery accepted! You are now assigned to this delivery.', {
         icon: '✅',
       });
-      
-      // Simulate notification
       toast.success('📦 Donor and receiver have been notified!', {
         icon: '🔔',
       });
+      await Promise.all([fetchAvailableDeliveries(), fetchMyDeliveries()]);
+    } else {
+      toast.error(response.errorMessage || response.error?.error || 'Failed to accept delivery.');
     }
-    
     setAcceptingId(null);
   };
 
-  const handleUpdateStatus = (deliveryId, newStatus) => {
-    if (newStatus === 'Delivered') {
-      // Update metrics
+  const handleMarkDelivered = async (deliveryId) => {
+    const response = await completeTransaction(deliveryId);
+    if (response.success) {
       setTotalDeliveries(prev => prev + 1);
       setImpactScore(prev => prev + 50);
-      
-      // Remove from active deliveries
-      setMyDeliveries(myDeliveries.filter(d => d.id !== deliveryId));
-      
       toast.success('🎉 Delivery completed successfully! +50 XP awarded!', {
         icon: '🎉',
       });
+      await fetchMyDeliveries();
     } else {
-      // Update status locally
-      const updatedMyDeliveries = myDeliveries.map(d =>
-        d.id === deliveryId ? { ...d, rider_status: newStatus } : d
-      );
-      setMyDeliveries(updatedMyDeliveries);
-
-      toast.success(`Status updated to: ${newStatus}`, {
-        icon: '✅',
-      });
+      toast.error(response.errorMessage || response.error?.error || 'Failed to mark as delivered.');
     }
   };
 
@@ -232,8 +189,9 @@ const RiderDashboard = () => {
 
   // ─── Render Functions ────────────────────────────────────
   const renderDeliveryCard = (item, isMyDelivery = false) => {
-    const statusBadge = RIDER_STATUS_BADGES[item.rider_status] || RIDER_STATUS_BADGES['Pending'];
+    const statusBadge = RIDER_STATUS_BADGES[item.status] || RIDER_STATUS_BADGES['Claimed'];
     const foodIcon = getFoodIcon(item.food_type);
+    const dropoffLocation = item.dropoff_location || item.pickup_location;
 
     return (
       <div className="rider-delivery-card" key={item.id}>
@@ -241,7 +199,7 @@ const RiderDashboard = () => {
           <div className="rider-card-icon">{foodIcon}</div>
           <div className="rider-card-title-section">
             <h3 className="rider-card-title">{item.food_title}</h3>
-            <p className="rider-card-donor">{item.donorName}</p>
+            <p className="rider-card-donor">{item.donor_name}</p>
             <span className={`rider-status-badge ${statusBadge.class}`}>
               {statusBadge.icon} {statusBadge.label}
             </span>
@@ -251,7 +209,7 @@ const RiderDashboard = () => {
         <div className="rider-card-body">
           <div className="rider-detail-row">
             <span className="rider-detail-label">Food Items</span>
-            <span className="rider-detail-value">🍽️ {item.foodItems || item.quantity}</span>
+            <span className="rider-detail-value">🍽️ {item.quantity}</span>
           </div>
 
           <div className="rider-location-section">
@@ -260,7 +218,7 @@ const RiderDashboard = () => {
                 <span className="rider-location-icon">📍</span>
                 <span className="rider-location-label">Pickup (Donor)</span>
               </div>
-              <p className="rider-location-text">{item.pickupLocation || item.pickup_location}</p>
+              <p className="rider-location-text">{item.pickup_location}</p>
             </div>
 
             <div className="rider-location-divider">
@@ -272,20 +230,18 @@ const RiderDashboard = () => {
                 <span className="rider-location-icon">🏠</span>
                 <span className="rider-location-label">Drop-off (Receiver)</span>
               </div>
-              <p className="rider-location-text">{item.dropoffLocation || item.pickup_location}</p>
+              <p className="rider-location-text">{dropoffLocation}</p>
             </div>
           </div>
 
           <div className="rider-time-section">
             <div className="rider-time-item">
               <span className="rider-time-label">Distance</span>
-              <span className="rider-time-value">{item.distance || 'N/A'}</span>
+              <span className="rider-time-value">{formatRiderDistance(item.distance)}</span>
             </div>
             <div className="rider-time-item">
               <span className="rider-time-label">Expiry</span>
-              <span className={`expiry-badge ${item.expiryTime?.includes('30') || item.expiryTime?.includes('45') ? 'urgent' : ''}`}>
-                ⏰ {item.expiryTime || formatDate(item.expiry_time)}
-              </span>
+              <span className="expiry-badge">⏰ {formatDate(item.expiry_time)}</span>
             </div>
           </div>
         </div>
@@ -301,39 +257,31 @@ const RiderDashboard = () => {
             </button>
           ) : (
             <div className="rider-action-buttons">
-              {item.rider_status === 'Accepted' && (
+              {item.status !== 'Completed' && (
                 <button
-                  onClick={() => handleUpdateStatus(item.id, 'On the Way')}
-                  className="rider-action-btn rider-btn-onway"
-                >
-                  🚚 Mark as Picked Up
-                </button>
-              )}
-              {item.rider_status === 'On the Way' && (
-                <button
-                  onClick={() => handleUpdateStatus(item.id, 'Delivered')}
+                  onClick={() => handleMarkDelivered(item.id)}
                   className="rider-action-btn rider-btn-delivered"
                 >
                   ✅ Mark as Delivered
                 </button>
               )}
-              
+
               {/* Communication Buttons */}
               <div className="rider-comm-buttons">
                 <button
-                  onClick={() => handleCallDonor(item.donorPhone)}
+                  onClick={() => handleCallDonor(item.donor_phone)}
                   className="rider-comm-btn rider-call-donor"
                 >
                   📞 Call Donor
                 </button>
                 <button
-                  onClick={() => handleCallReceiver(item.receiverPhone)}
+                  onClick={() => handleCallReceiver(item.receiver_phone)}
                   className="rider-comm-btn rider-call-receiver"
                 >
                   📱 Call Receiver
                 </button>
                 <button
-                  onClick={() => handleOpenMaps(item.pickupLocation, item.dropoffLocation)}
+                  onClick={() => handleOpenMaps(item.pickup_location, dropoffLocation)}
                   className="rider-comm-btn rider-maps-btn"
                 >
                   📍 Open Maps

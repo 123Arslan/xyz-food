@@ -423,15 +423,20 @@ const ReceiverDashboard = () => {
   const processedFoodItems = useMemo(() => {
     const unclaimed = foodItems.filter(item => item.status === 'Available');
     const itemsWithExpiry = unclaimed.map(item => {
-      const donorCoords = getCoordinatesFromLocation(item.pickup_location);
-      const userCoords = userLatitude && userLongitude 
+      const donorCoords = (item.latitude != null && item.longitude != null)
+        ? { lat: item.latitude, lng: item.longitude }
+        : getCoordinatesFromLocation(item.pickup_location);
+      const userCoords = userLatitude && userLongitude
         ? { lat: userLatitude, lng: userLongitude }
         : LOCATION_COORDINATES[selectedCity] || LOCATION_COORDINATES.default;
-      
-      const distance = calculateDistance(
-        userCoords.lat, userCoords.lng,
-        donorCoords.lat, donorCoords.lng
-      );
+
+      // Prefer the exact distance computed by the backend (Haversine, at the
+      // DB layer, from the receiver's real coordinates). Fall back to a
+      // client-side estimate only when the API didn't return one (e.g. no
+      // geolocation available yet).
+      const distance = typeof item.distance === 'number'
+        ? item.distance
+        : calculateDistance(userCoords.lat, userCoords.lng, donorCoords.lat, donorCoords.lng);
 
       return {
         ...item,

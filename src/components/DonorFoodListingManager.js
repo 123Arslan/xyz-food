@@ -98,6 +98,10 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
   const [editImageFile, setEditImageFile] = useState(null);
   const [editImagePreview, setEditImagePreview] = useState('');
 
+  /* Location source: tracks where postForm.latitude/longitude came from, so a
+     precise device GPS fix is never silently clobbered by a coarser fallback. */
+  const [locationSource, setLocationSource] = useState(null); // 'gps' | 'ip' | 'geocoded' | null
+
   /* Effects */
   useEffect(() => {
     if (isAuthenticated) loadFoodListings();
@@ -106,20 +110,45 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
   useEffect(() => {
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (pos) =>
+        (pos) => {
           setPostForm((prev) => ({
             ...prev,
             latitude: pos.coords.latitude,
             longitude: pos.coords.longitude,
-          })),
-        (err) => console.warn('Geolocation denied:', err)
+          }));
+          setLocationSource('gps');
+          setStatusMessage("📍 Using your device's current location for this listing.");
+          setStatusType('success');
+        },
+        async (err) => {
+          console.warn('Geolocation denied:', err);
+          try {
+            const res = await fetch('https://ipapi.co/json/');
+            const data = await res.json();
+            if (data.latitude && data.longitude) {
+              setPostForm((prev) => ({
+                ...prev,
+                latitude: data.latitude,
+                longitude: data.longitude,
+              }));
+              setLocationSource('ip');
+              setStatusMessage('📍 Precise location unavailable — using an approximate network-based location. Enter the pickup address for a more accurate position.');
+              setStatusType('error');
+            }
+          } catch (e) {
+            console.warn('IP geolocation fallback failed', e);
+          }
+        }
       );
     }
   }, []);
 
-  /* Geocoding on location blur */
+  /* Geocoding on location blur — only used when we don't already have a
+     precise device GPS fix, so typing/editing the address can never
+     overwrite an accurate GPS coordinate with a coarser text-based guess. */
   const handleLocationBlur = async () => {
     if (!postForm.pickup_location.trim()) return;
+    if (locationSource === 'gps') return;
     try {
       const res = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(postForm.pickup_location)}`
@@ -131,7 +160,8 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
           latitude: parseFloat(data[0].lat),
           longitude: parseFloat(data[0].lon),
         }));
-        setStatusMessage('📍 Location geocoded successfully!');
+        setLocationSource('geocoded');
+        setStatusMessage('📍 Location geocoded from the pickup address.');
         setStatusType('success');
       }
     } catch (err) {
@@ -278,8 +308,8 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
       fd.append('pickup_location', postForm.pickup_location);
       fd.append('contact_phone', postForm.contact_phone);
       fd.append('food_image', imageFile);
-      if (postForm.latitude) fd.append('latitude', postForm.latitude);
-      if (postForm.longitude) fd.append('longitude', postForm.longitude);
+      if (postForm.latitude != null) fd.append('latitude', postForm.latitude);
+      if (postForm.longitude != null) fd.append('longitude', postForm.longitude);
       response = await createFoodListing(fd, true);
     } else {
       response = await createFoodListing({
@@ -300,7 +330,15 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
     if (response.success) {
       setStatusMessage('✅ Food listing created successfully!');
       setStatusType('success');
-      setPostForm(initialFormState);
+      // Keep the device/network-derived coordinates for the next listing —
+      // only an address-geocoded fix is tied to the (now-cleared) address text.
+      const keepCoords = locationSource === 'gps' || locationSource === 'ip';
+      setPostForm({
+        ...initialFormState,
+        latitude: keepCoords ? postForm.latitude : null,
+        longitude: keepCoords ? postForm.longitude : null,
+      });
+      if (!keepCoords) setLocationSource(null);
       setImageFile(null);
       setImagePreviewUrl('');
       setImageInputMode('url');
@@ -570,6 +608,13 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
             <div className="donor-form-group donor-form-group-full">
               <label className="donor-form-label">Pickup Location *</label>
               <textarea name="pickup_location" value={postForm.pickup_location} onChange={handlePostChange} onBlur={handleLocationBlur} rows={3} placeholder="Enter the full pickup address, landmark, and directions" className="donor-textarea" />
+              {postForm.latitude != null && postForm.longitude != null && (
+                <small className="donor-location-source-hint">
+                  {locationSource === 'gps' && '📍 Using your device\'s precise GPS location.'}
+                  {locationSource === 'ip' && '📍 Using an approximate network-based location (allow location access for accuracy).'}
+                  {locationSource === 'geocoded' && '📍 Using a location estimated from the pickup address.'}
+                </small>
+              )}
             </div>
             <div className="donor-form-group donor-form-group-full">
               <label className="donor-form-label">Description *</label>

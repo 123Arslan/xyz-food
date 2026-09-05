@@ -7,8 +7,93 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.authtoken.models import Token
 from django.contrib.auth.models import User
 from django.db import connection
+from django.db.models import F, Value, FloatField, ExpressionWrapper, Case, When, Subquery, OuterRef
+from django.db.models.functions import Radians, Sin, Cos, ATan2, Sqrt, Power
 from .models import Profile, FoodListing, Message, Donation, Feedback, Notification
 from .serializers import SignupSerializer, UserSerializer, LoginSerializer, FoodListingSerializer, MessageSerializer, DonationSerializer, FeedbackSerializer, NotificationSerializer
+
+# ─── Location-based filtering (Haversine, computed at the DB layer) ───────
+EARTH_RADIUS_KM = 6371.0
+DEFAULT_RADIUS_KM = 30.0
+
+
+def annotate_distance(queryset, user_lat, user_lng, lat_expr=None, lng_expr=None, alias='distance'):
+    """Annotate each row with `alias` (km) from (user_lat, user_lng) to the row's
+    target latitude/longitude (by default the row's own `latitude`/`longitude`
+    fields, but any expression — e.g. a Case/When or a related field — can be
+    passed via lat_expr/lng_expr), using the Haversine formula evaluated by the
+    database (RADIANS/SIN/COS/ATAN2/SQRT/POWER pushed down to SQL, not computed
+    in Python).
+    """
+    if lat_expr is None:
+        lat_expr = F('latitude')
+    if lng_expr is None:
+        lng_expr = F('longitude')
+
+    user_lat_rad = Radians(Value(user_lat, output_field=FloatField()))
+    user_lng_rad = Radians(Value(user_lng, output_field=FloatField()))
+    lat_rad = Radians(lat_expr)
+    lng_rad = Radians(lng_expr)
+
+    dlat = lat_rad - user_lat_rad
+    dlon = lng_rad - user_lng_rad
+
+    a = Power(Sin(dlat / 2.0), 2) + Cos(user_lat_rad) * Cos(lat_rad) * Power(Sin(dlon / 2.0), 2)
+    c = 2 * ATan2(Sqrt(a), Sqrt(1 - a))
+
+    distance_expr = ExpressionWrapper(
+        Value(EARTH_RADIUS_KM, output_field=FloatField()) * c,
+        output_field=FloatField(),
+    )
+    return queryset.annotate(**{alias: distance_expr})
+
+
+def parse_coords(request):
+    """Return (lat, lng) floats from query params, or (None, None) if absent/invalid."""
+    lat = request.query_params.get('lat')
+    lng = request.query_params.get('lng')
+    if lat is None or lng is None:
+        return None, None
+    try:
+        return float(lat), float(lng)
+    except (TypeError, ValueError):
+        return None, None
+
+
+def parse_coords_from_data(data):
+    """Return (lat, lng) floats from a request body dict, or (None, None)."""
+    if not isinstance(data, dict):
+        return None, None
+    lat = data.get('latitude') or data.get('lat')
+    lng = data.get('longitude') or data.get('lng')
+    if lat is None or lng is None:
+        return None, None
+    try:
+        return float(lat), float(lng)
+    except (TypeError, ValueError):
+        return None, None
+
+
+def parse_radius(request, default=DEFAULT_RADIUS_KM):
+    raw = request.query_params.get('radius') or request.query_params.get('radius_km')
+    if not raw:
+        return default
+    try:
+        radius = float(raw)
+        return radius if radius > 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+def filter_within_radius(queryset, user_lat, user_lng, radius_km):
+    """Restrict a queryset to rows with coordinates set and within radius_km of
+    (user_lat, user_lng), ordered nearest-first. The distance is annotated on
+    each row (in km) via annotate_distance so it can be returned in the API
+    response.
+    """
+    queryset = queryset.filter(latitude__isnull=False, longitude__isnull=False)
+    queryset = annotate_distance(queryset, user_lat, user_lng)
+    return queryset.filter(distance__lte=radius_km).order_by('distance')
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -125,16 +210,6 @@ class FoodListingDetailView(generics.RetrieveUpdateDestroyAPIView):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def get_food(request):
-    import math
-
-    def haversine(lat1, lon1, lat2, lon2):
-        R = 6371.0
-        dlat = math.radians(lat2 - lat1)
-        dlon = math.radians(lon2 - lon1)
-        a = math.sin(dlat / 2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2)**2
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-        return R * c
-
     queryset = FoodListing.objects.filter(status='Available')
 
     # Get location filter
@@ -160,37 +235,24 @@ def get_food(request):
         else:
             queryset = queryset.filter(food_type__iexact=food_type)
 
-    listings = list(queryset.order_by('-created_at'))
+    # Restrict to a 30km (configurable) radius of the receiver/rider's current
+    # location. Distance is computed at the database layer via the Haversine
+    # formula (see annotate_distance) so it can also be returned in the response.
+    user_lat, user_lng = parse_coords(request)
+    has_coords = user_lat is not None and user_lng is not None
+    radius_km = parse_radius(request)
 
-    # Distance calculation and sorting
-    lat = request.query_params.get('lat')
-    lng = request.query_params.get('lng')
-    has_coords = False
-
-    if lat and lng:
-        try:
-            user_lat = float(lat)
-            user_lng = float(lng)
-            has_coords = True
-            for item in listings:
-                if item.latitude is not None and item.longitude is not None:
-                    item.distance = haversine(user_lat, user_lng, item.latitude, item.longitude)
-                else:
-                    item.distance = None
-            
-            listings.sort(key=lambda x: (x.distance is None, x.distance or 0))
-        except ValueError:
-            pass
+    if has_coords:
+        listings = list(filter_within_radius(queryset, user_lat, user_lng, radius_km))
+    else:
+        listings = list(queryset.order_by('-created_at'))
 
     serializer = FoodListingSerializer(listings, many=True, context={'request': request})
     data = serializer.data
 
     if has_coords:
-        for i, item_data in enumerate(data):
-            if hasattr(listings[i], 'distance') and listings[i].distance is not None:
-                item_data['distance'] = round(listings[i].distance, 2)
-            else:
-                item_data['distance'] = None
+        for item_data, listing in zip(data, listings):
+            item_data['distance'] = round(listing.distance, 2)
 
     return Response(data, status=status.HTTP_200_OK)
 
@@ -237,16 +299,28 @@ def claim_food(request, food_id=None):
             food_listing.claimed_by = request.user
             food_listing.save()
 
+            receiver_lat, receiver_lng = parse_coords_from_data(request.data)
+
             donation, created = Donation.objects.get_or_create(
                 food_id=food_listing,
                 defaults={
                     'donor_id': food_listing.user,
-                    'receiver_id': request.user
+                    'receiver_id': request.user,
+                    'latitude': receiver_lat,
+                    'longitude': receiver_lng,
                 }
             )
-            if not created and donation.receiver_id != request.user:
-                donation.receiver_id = request.user
-                donation.save()
+            if not created:
+                changed = False
+                if donation.receiver_id != request.user:
+                    donation.receiver_id = request.user
+                    changed = True
+                if receiver_lat is not None and receiver_lng is not None:
+                    donation.latitude = receiver_lat
+                    donation.longitude = receiver_lng
+                    changed = True
+                if changed:
+                    donation.save()
 
             # Create notification for donor
             donor_name = getattr(request.user, 'profile', None) and request.user.profile.full_name or request.user.email
@@ -517,6 +591,11 @@ def chat_history(request, listing_id):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def rider_accept_delivery(request, food_id):
+    """Assign the requesting rider to a claimed listing. This does NOT mean the
+    rider has the food yet — status stays 'Claimed' (now with a rider attached)
+    until the rider confirms pickup via rider_mark_picked_up, at which point it
+    becomes 'Out for Delivery'.
+    """
     try:
         with transaction.atomic():
             food_listing = FoodListing.objects.select_for_update().get(id=food_id)
@@ -524,38 +603,35 @@ def rider_accept_delivery(request, food_id):
                 return Response({"error": f"Food listing is currently '{food_listing.status}' and cannot be accepted."}, status=status.HTTP_400_BAD_REQUEST)
             if food_listing.rider and food_listing.rider != request.user:
                 return Response({"error": "Another rider has already accepted this delivery."}, status=status.HTTP_400_BAD_REQUEST)
-            
-            food_listing.status = 'Out for Delivery'
+
             food_listing.rider = request.user
             food_listing.save()
-            
+
             rider_name = getattr(getattr(request.user, 'profile', None), 'full_name', '') or request.user.username
-            
+
             # Get donation to notify donor and receiver
             donation = Donation.objects.filter(food_id=food_listing).first()
             if donation:
-                # Notify donor
                 Notification.objects.create(
                     recipient=food_listing.user,
                     notification_type='delivery',
                     food_listing=food_listing,
-                    message=f"Rider {rider_name} has accepted delivery for '{food_listing.food_title}'."
+                    message=f"Rider {rider_name} has accepted delivery for '{food_listing.food_title}' and is heading to you for pickup."
                 )
-                # Notify receiver
                 Notification.objects.create(
                     recipient=donation.receiver_id,
                     notification_type='delivery',
                     food_listing=food_listing,
-                    message=f"Rider {rider_name} is on the way with your food '{food_listing.food_title}'."
+                    message=f"Rider {rider_name} has been assigned to deliver your food '{food_listing.food_title}'."
                 )
             elif food_listing.claimed_by:
                 Notification.objects.create(
                     recipient=food_listing.claimed_by,
                     notification_type='delivery',
                     food_listing=food_listing,
-                    message=f"Rider {rider_name} is on the way with your food '{food_listing.food_title}'."
+                    message=f"Rider {rider_name} has been assigned to deliver your food '{food_listing.food_title}'."
                 )
-            
+
             return Response({
                 "message": "Delivery accepted successfully",
                 "status": food_listing.status,
@@ -568,20 +644,120 @@ def rider_accept_delivery(request, food_id):
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def rider_mark_picked_up(request, food_id):
+    """The assigned rider confirms they've collected the food from the donor.
+    Transitions 'Claimed' -> 'Out for Delivery', after which the rider's
+    destination switches from the donor's pickup point to the receiver's
+    drop-off point.
+    """
+    try:
+        with transaction.atomic():
+            food_listing = FoodListing.objects.select_for_update().get(id=food_id)
+            if food_listing.rider != request.user:
+                return Response({"error": "You are not assigned to this delivery."}, status=status.HTTP_403_FORBIDDEN)
+            if food_listing.status != 'Claimed':
+                return Response({"error": f"Food listing is currently '{food_listing.status}' and cannot be marked picked up."}, status=status.HTTP_400_BAD_REQUEST)
+
+            food_listing.status = 'Out for Delivery'
+            food_listing.save()
+
+            rider_name = getattr(getattr(request.user, 'profile', None), 'full_name', '') or request.user.username
+            donation = Donation.objects.filter(food_id=food_listing).first()
+            recipient = donation.receiver_id if donation else food_listing.claimed_by
+            if recipient:
+                Notification.objects.create(
+                    recipient=recipient,
+                    notification_type='delivery',
+                    food_listing=food_listing,
+                    message=f"Rider {rider_name} has picked up your food '{food_listing.food_title}' and is on the way to you."
+                )
+
+            return Response({
+                "message": "Pickup confirmed successfully",
+                "status": food_listing.status,
+                "listing": FoodListingSerializer(food_listing, context={'request': request}).data
+            }, status=status.HTTP_200_OK)
+    except FoodListing.DoesNotExist:
+        return Response({"error": "Food listing not found."}, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def rider_available_deliveries(request):
-    listings = FoodListing.objects.filter(status='Claimed', rider__isnull=True).order_by('-created_at')
+    queryset = FoodListing.objects.filter(status='Claimed', rider__isnull=True)
+
+    # Riders should only see pickups within a 30km (configurable) radius of
+    # their current location, with distance computed at the DB layer.
+    user_lat, user_lng = parse_coords(request)
+    has_coords = user_lat is not None and user_lng is not None
+    radius_km = parse_radius(request)
+
+    if has_coords:
+        listings = list(filter_within_radius(queryset, user_lat, user_lng, radius_km))
+    else:
+        listings = list(queryset.order_by('-created_at'))
+
     serializer = FoodListingSerializer(listings, many=True, context={'request': request})
-    return Response(serializer.data, status=status.HTTP_200_OK)
+    data = serializer.data
+
+    if has_coords:
+        for item_data, listing in zip(data, listings):
+            item_data['distance'] = round(listing.distance, 2)
+
+    return Response(data, status=status.HTTP_200_OK)
 
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def rider_my_deliveries(request):
-    listings = FoodListing.objects.filter(rider=request.user, status__in=['Out for Delivery', 'Claimed']).order_by('-created_at')
+    """The rider's active deliveries, with the next-leg destination and distance:
+    while status is 'Claimed' the rider is still heading to the donor to pick up
+    the food; once 'Out for Delivery' the rider is heading to the receiver's
+    drop-off point. Distance to that next stop is computed at the DB layer via
+    the Haversine formula, from the rider's current coordinates (?lat=&lng=).
+    """
+    queryset = FoodListing.objects.filter(rider=request.user, status__in=['Out for Delivery', 'Claimed'])
+
+    donation_lat_sq = Donation.objects.filter(food_id=OuterRef('pk')).order_by('-created_at').values('latitude')[:1]
+    donation_lng_sq = Donation.objects.filter(food_id=OuterRef('pk')).order_by('-created_at').values('longitude')[:1]
+
+    queryset = queryset.annotate(
+        target_lat=Case(
+            When(status='Out for Delivery', then=Subquery(donation_lat_sq)),
+            default=F('latitude'),
+            output_field=FloatField(),
+        ),
+        target_lng=Case(
+            When(status='Out for Delivery', then=Subquery(donation_lng_sq)),
+            default=F('longitude'),
+            output_field=FloatField(),
+        ),
+    )
+
+    user_lat, user_lng = parse_coords(request)
+    has_coords = user_lat is not None and user_lng is not None
+    if has_coords:
+        queryset = annotate_distance(queryset, user_lat, user_lng, lat_expr=F('target_lat'), lng_expr=F('target_lng'))
+
+    listings = list(queryset.order_by('-created_at'))
+
     serializer = FoodListingSerializer(listings, many=True, context={'request': request})
-    return Response(serializer.data, status=status.HTTP_200_OK)
+    data = serializer.data
+
+    for item_data, listing in zip(data, listings):
+        item_data['destination_type'] = 'receiver' if listing.status == 'Out for Delivery' else 'donor'
+        item_data['destination_lat'] = listing.target_lat
+        item_data['destination_lng'] = listing.target_lng
+        if has_coords and listing.target_lat is not None and listing.target_lng is not None:
+            item_data['distance'] = round(listing.distance, 2)
+        else:
+            item_data['distance'] = None
+
+    return Response(data, status=status.HTTP_200_OK)
 
 
 @api_view(['POST'])

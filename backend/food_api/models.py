@@ -60,8 +60,8 @@ class FoodListing(models.Model):
     food_image_url = models.URLField(max_length=500, blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Available')
     created_at = models.DateTimeField(auto_now_add=True)
-    latitude = models.FloatField(null=True, blank=True)
-    longitude = models.FloatField(null=True, blank=True)
+    latitude = models.FloatField(null=True, blank=True, db_index=True)
+    longitude = models.FloatField(null=True, blank=True, db_index=True)
     claimed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -100,6 +100,10 @@ class Donation(models.Model):
     donor_id = models.ForeignKey(User, on_delete=models.CASCADE, related_name='donations_made', db_column='donor_id')
     receiver_id = models.ForeignKey(User, on_delete=models.CASCADE, related_name='donations_received', db_column='receiver_id')
     food_id = models.ForeignKey(FoodListing, on_delete=models.CASCADE, related_name='donations', db_column='food_id')
+    # Receiver's device location captured at claim time, used to route riders
+    # to the drop-off point once they've picked up the food from the donor.
+    latitude = models.FloatField(null=True, blank=True)
+    longitude = models.FloatField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
