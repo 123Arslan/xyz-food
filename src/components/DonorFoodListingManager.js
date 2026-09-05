@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { toast } from 'react-toastify';
-import { getFoodListings, createFoodListing, updateFoodListing, deleteFoodListing, completeTransaction } from '../api';
+import { getFoodListings, createFoodListing, updateFoodListing, deleteFoodListing, completeTransaction, resolveMediaUrl } from '../api';
 import { useAuth } from '../AuthContext';
 import ChatWindow from './ChatWindow';
 import DonorAnalytics from './DonorAnalytics';
@@ -9,7 +9,7 @@ import './DonorFoodListingManager.css';
 /* -----------------------------------------------------------------
    CONSTANTS
 ------------------------------------------------------------------ */
-const BACKEND_HOST = 'http://localhost:8000';
+const DEFAULT_FOOD_IMAGE = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80';
 
 const initialFormState = {
   food_title: '',
@@ -46,19 +46,12 @@ const formatDateTimeForBackend = (v) => {
 
 /* -----------------------------------------------------------------
    IMAGE RESOLVER — checks all possible Django field names
-   and handles relative media paths by prepending BACKEND_HOST
+   and handles relative media paths by prepending BACKEND_URL
 ------------------------------------------------------------------ */
 const resolveImageSrc = (listing) => {
-  const raw =
-    listing?.food_image ||
-    listing?.food_image_url ||
-    listing?.image ||
-    null;
-
-  if (!raw) return null;
-  if (/^(https?:|data:)/i.test(raw)) return raw;
-  // Relative path e.g. "/media/food_images/xyz.jpg"
-  return `${BACKEND_HOST}${raw.startsWith('/') ? '' : '/'}${raw}`;
+  if (!listing) return null;
+  const rawImg = listing.food_image || listing.food_image_url || listing.image;
+  return resolveMediaUrl(rawImg) || null;
 };
 
 /* -----------------------------------------------------------------
@@ -315,10 +308,11 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
       toast.success('🍲 New food available near you!', { icon: '🔔' });
     } else {
       const msg =
+        response.errorMessage ||
         response.error?.detail ||
         response.error?.non_field_errors?.[0] ||
         response.error?.error ||
-        JSON.stringify(response.error);
+        'Failed to create listing.';
       setStatusMessage(msg);
       setStatusType('error');
     }
@@ -395,8 +389,10 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
       loadFoodListings();
     } else {
       const msg =
-        response.error?.detail || response.error?.error ||
-        JSON.stringify(response.error) || 'Failed to update listing.';
+        response.errorMessage ||
+        response.error?.detail ||
+        response.error?.error ||
+        'Failed to update listing.';
       setStatusMessage(msg);
       setStatusType('error');
     }
@@ -432,7 +428,7 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
     if (response.success) {
       toast.success('🎉 Transaction marked as completed!');
     } else {
-      const errMsg = response.error?.error || response.error?.detail || 'Failed to complete transaction.';
+      const errMsg = response.errorMessage || response.error?.error || response.error?.detail || 'Failed to complete transaction.';
       setStatusMessage(errMsg);
       setStatusType('error');
       loadFoodListings(); // revert on failure
@@ -743,19 +739,16 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
                   <div key={listing.id} className={`donor-card${isCompleting ? ' donor-card-completing' : ''}`}>
 
                     {/* Card Image Area */}
-                    <div className={`donor-card-image${!imageSrc ? ' img-fallback' : ''}`}>
-                      {imageSrc && (
-                        <img
-                          src={imageSrc}
-                          alt={listing.food_title}
-                          className="donor-card-img"
-                          onError={(e) => {
-                            e.target.onerror = null;
-                            e.target.style.display = 'none';
-                            e.target.parentElement.classList.add('img-fallback');
-                          }}
-                        />
-                      )}
+                    <div className="donor-card-image">
+                      <img
+                        src={imageSrc || DEFAULT_FOOD_IMAGE}
+                        alt={listing.food_title}
+                        className="donor-card-img"
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.src = DEFAULT_FOOD_IMAGE;
+                        }}
+                      />
                       {/* Gradient overlay always present for readability */}
                       <div className="donor-card-image-overlay" />
                       {/* Placeholder emoji — visible when no image */}
@@ -770,6 +763,7 @@ const DonorFoodListingManager = ({ showCreate = true, showManage = true }) => {
                       </div>
 
                       {/* Food Type Pill — top left */}
+
                       <div className="donor-card-type-pill">
                         {foodEmoji} {listing.food_type}
                       </div>

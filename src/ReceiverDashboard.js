@@ -1,14 +1,21 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import axios from 'axios';
 import { toast } from 'react-toastify';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import './ReceiverDashboard.css';
 import './Home.css';
-import { claimFood, completeTransaction, getMyClaims } from './api';
+import { claimFood, completeTransaction, getMyClaims, getAvailableFood, postFeedback, resolveMediaUrl } from './api';
 import ChatWindow from './components/ChatWindow';
 
 // ─── Constants ──────────────────────────────────────────────
+const DEFAULT_FOOD_IMAGE = 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80';
+
+const resolveFoodImageSrc = (item) => {
+  if (!item) return DEFAULT_FOOD_IMAGE;
+  const raw = item.food_image || item.food_image_url || item.image || item.image_url || item.foodImage;
+  return resolveMediaUrl(raw) || DEFAULT_FOOD_IMAGE;
+};
+
 const CITIES = ['Lahore', 'Karachi', 'Islamabad', 'Rawalpindi', 'Faisalabad', 'Multan'];
 
 // ─── Mock Location Coordinates ───────────────────────────────
@@ -342,11 +349,15 @@ const ReceiverDashboard = () => {
         params.lat = userLatitude;
         params.lng = userLongitude;
       }
-      const response = await axios.get('http://localhost:8000/api/get-food/', { params });
-      setFoodItems(response.data);
+      const response = await getAvailableFood(params);
+      if (response.success) {
+        setFoodItems(response.data);
+      } else {
+        setErrorMsg(response.errorMessage || 'Failed to load food listings. Please try again later.');
+      }
     } catch (err) {
       console.error('Error fetching food listings:', err);
-      setErrorMsg('Failed to load food listings. Please try again later.');
+      setErrorMsg(err?.message || 'Failed to load food listings. Please try again later.');
     } finally {
       setIsLoading(false);
     }
@@ -388,7 +399,7 @@ const ReceiverDashboard = () => {
               icon: getFoodIcon(listing.food_type),
               rating: 0,
               feedbackSubmitted: false,
-              foodImage: listing.food_image_url || listing.image_url || listing.image || null,
+              foodImage: resolveFoodImageSrc(listing),
             };
           });
         setClaims(mappedClaims);
@@ -471,7 +482,7 @@ const ReceiverDashboard = () => {
         await fetchMyClaims();
         setActiveTab('claims');
       } else {
-        const errMsg = response.error?.error || response.error?.detail || 'Failed to claim food.';
+        const errMsg = response.errorMessage || response.error?.error || response.error?.detail || 'Failed to claim food.';
         setToast({ icon: '❌', message: errMsg });
       }
     } catch (err) {
@@ -493,7 +504,7 @@ const ReceiverDashboard = () => {
         setFeedbackComment('');
         setShowFeedbackSuccess(false);
       } else {
-        const errMsg = response.error?.error || response.error?.detail || 'Failed to complete transaction.';
+        const errMsg = response.errorMessage || response.error?.error || response.error?.detail || 'Failed to complete transaction.';
         setToast({ icon: '❌', message: errMsg });
       }
     } catch (err) {
@@ -509,22 +520,30 @@ const ReceiverDashboard = () => {
     }
     setSubmittingFeedback(true);
     try {
-      const token = localStorage.getItem('authToken') || localStorage.getItem('token') || '';
-      const headers = token ? { Authorization: `Token ${token}` } : {};
-      const payload = {
+      const response = await postFeedback({
         rating: feedbackRating,
         comment: feedbackComment,
         food_id: feedbackFoodId,
-      };
-      await axios.post('http://localhost:8000/api/feedback/', payload, { headers });
+      });
+
+      if (!response.success) {
+        alert(
+          response.errorMessage ||
+            response.error?.error ||
+            response.error?.rating?.[0] ||
+            'Failed to submit feedback. Please try again.'
+        );
+        return;
+      }
+
       setShowFeedbackSuccess(true);
       setTimeout(() => {
         setFeedbackFoodId(null);
         setShowFeedbackSuccess(false);
       }, 2000);
     } catch (err) {
-      console.error("Failed to submit feedback:", err);
-      alert(err.response?.data?.error || err.response?.data?.rating?.[0] || "Failed to submit feedback. Please try again.");
+      console.error('Failed to submit feedback:', err);
+      alert(err?.message || 'Failed to submit feedback. Please try again.');
     } finally {
       setSubmittingFeedback(false);
     }
@@ -635,12 +654,12 @@ const ReceiverDashboard = () => {
                   <div className="critical-expiry-badge">⚠️ EXPIRING SOON!</div>
                 )}
                 <img
-                  src={item.food_image_url || item.image_url || item.image || '/default-food.jpg'}
+                  src={resolveFoodImageSrc(item)}
                   alt={item.food_title}
                   className="food-item-image"
                   onError={(e) => {
                     e.target.onerror = null;
-                    e.target.src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80";
+                    e.target.src = DEFAULT_FOOD_IMAGE;
                   }}
                 />
                 <span className={`food-item-badge ${
@@ -775,12 +794,12 @@ const ReceiverDashboard = () => {
               {/* Food Image Header */}
               <div className="claim-image-header">
                 <img 
-                  src={claim.foodImage || '/default-food.jpg'} 
+                  src={claim.foodImage || DEFAULT_FOOD_IMAGE} 
                   alt={claim.name}
                   className="claim-food-image"
                   onError={(e) => {
                     e.target.onerror = null;
-                    e.target.src = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=400&q=80";
+                    e.target.src = DEFAULT_FOOD_IMAGE;
                   }}
                 />
                 <span className={`claim-status-badge ${getStatusClass(claim.status)}`}>

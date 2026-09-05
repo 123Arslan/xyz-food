@@ -3,6 +3,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.authentication import TokenAuthentication
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.authtoken.models import Token
 from django.contrib.auth.models import User
 from django.db import connection
@@ -102,6 +103,7 @@ class FoodListingListCreateView(generics.ListCreateAPIView):
     serializer_class = FoodListingSerializer
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
 
     def get_queryset(self):
         return FoodListing.objects.filter(user=self.request.user).order_by('-created_at')
@@ -114,6 +116,7 @@ class FoodListingDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = FoodListingSerializer
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
 
     def get_queryset(self):
         return FoodListing.objects.filter(user=self.request.user)
@@ -179,7 +182,7 @@ def get_food(request):
         except ValueError:
             pass
 
-    serializer = FoodListingSerializer(listings, many=True)
+    serializer = FoodListingSerializer(listings, many=True, context={'request': request})
     data = serializer.data
 
     if has_coords:
@@ -195,33 +198,71 @@ from django.db import transaction
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def claim_food(request, food_id):
+def claim_food(request, food_id=None):
+    # Support food_id from URL parameter, request body, or query param
+    target_id = food_id
+    if not target_id and isinstance(request.data, dict):
+        target_id = request.data.get('food_id') or request.data.get('id')
+    if not target_id:
+        target_id = request.query_params.get('food_id') or request.query_params.get('id')
+
+    if not target_id:
+        return Response({"error": "food_id is required to claim a listing."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        target_id = int(target_id)
+    except (TypeError, ValueError):
+        return Response({"error": "Invalid food_id provided."}, status=status.HTTP_400_BAD_REQUEST)
+
     try:
         with transaction.atomic():
-            food_listing = FoodListing.objects.select_for_update().get(id=food_id, status='Available')
-            donation = Donation.objects.create(
-                donor_id=food_listing.user,
-                receiver_id=request.user,
-                food_id=food_listing
-            )
+            try:
+                food_listing = FoodListing.objects.select_for_update().get(id=target_id)
+            except FoodListing.DoesNotExist:
+                return Response({"error": "Food listing does not exist."}, status=status.HTTP_404_NOT_FOUND)
+
+            # Prevent donor from claiming their own food
+            if food_listing.user == request.user:
+                return Response({"error": "You cannot claim your own food donation."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Check status
+            if food_listing.status.lower() != 'available':
+                return Response(
+                    {"error": f"Food listing is not available (current status: {food_listing.status})."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Link receiver to listing and update status
             food_listing.status = 'Claimed'
+            food_listing.claimed_by = request.user
             food_listing.save()
-            
+
+            donation, created = Donation.objects.get_or_create(
+                food_id=food_listing,
+                defaults={
+                    'donor_id': food_listing.user,
+                    'receiver_id': request.user
+                }
+            )
+            if not created and donation.receiver_id != request.user:
+                donation.receiver_id = request.user
+                donation.save()
+
             # Create notification for donor
+            donor_name = getattr(request.user, 'profile', None) and request.user.profile.full_name or request.user.email
             Notification.objects.create(
                 recipient=food_listing.user,
                 notification_type='claim',
                 food_listing=food_listing,
-                message=f"Your food listing '{food_listing.food_title}' has been claimed by {request.user.profile.full_name or request.user.email}."
+                message=f"Your food listing '{food_listing.food_title}' has been claimed by {donor_name}."
             )
-            
+
             return Response({
                 "message": "Food claimed successfully",
-                "donation": DonationSerializer(donation).data,
-                "food_status": food_listing.status
+                "donation": DonationSerializer(donation, context={'request': request}).data,
+                "food_status": food_listing.status,
+                "listing": FoodListingSerializer(food_listing, context={'request': request}).data,
             }, status=status.HTTP_200_OK)
-    except FoodListing.DoesNotExist:
-        return Response({"error": "Food listing is not available or does not exist."}, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
@@ -231,14 +272,22 @@ def complete_transaction(request, food_id):
     try:
         with transaction.atomic():
             food_listing = FoodListing.objects.select_for_update().get(id=food_id)
-            if food_listing.status != 'Out for Delivery':
-                return Response({"error": "Food listing is not in Out for Delivery status."}, status=status.HTTP_400_BAD_REQUEST)
+            if food_listing.status not in ['Out for Delivery', 'Claimed']:
+                return Response({"error": f"Food listing cannot be completed from status '{food_listing.status}'."}, status=status.HTTP_400_BAD_REQUEST)
             
             donation = Donation.objects.filter(food_id=food_listing).first()
             if not donation:
                 return Response({"error": "No donation record found for this listing."}, status=status.HTTP_400_BAD_REQUEST)
             
-            if request.user != food_listing.user and request.user != donation.receiver_id:
+            # Allow donor, receiver, OR assigned rider to mark complete
+            is_authorized = (
+                request.user == food_listing.user or
+                request.user == donation.receiver_id or
+                (food_listing.claimed_by and request.user == food_listing.claimed_by) or
+                (food_listing.rider and request.user == food_listing.rider) or
+                request.user.is_staff
+            )
+            if not is_authorized:
                 return Response({"error": "You are not authorized to complete this transaction."}, status=status.HTTP_403_FORBIDDEN)
             
             food_listing.status = 'Completed'
@@ -266,7 +315,7 @@ def complete_transaction(request, food_id):
 @permission_classes([IsAuthenticated])
 def my_claims(request):
     donations = Donation.objects.filter(receiver_id=request.user).order_by('-created_at')
-    serializer = DonationSerializer(donations, many=True)
+    serializer = DonationSerializer(donations, many=True, context={'request': request})
     return Response(serializer.data, status=status.HTTP_200_OK)
 
 @api_view(['POST'])
@@ -317,7 +366,7 @@ def admin_stats(request):
 @permission_classes([IsAuthenticated, IsAdminRole])
 def admin_listings(request):
     listings = FoodListing.objects.all().order_by('-created_at')
-    serializer = FoodListingSerializer(listings, many=True)
+    serializer = FoodListingSerializer(listings, many=True, context={'request': request})
     return Response(serializer.data, status=status.HTTP_200_OK)
 
 @api_view(['DELETE'])
@@ -472,10 +521,15 @@ def rider_accept_delivery(request, food_id):
         with transaction.atomic():
             food_listing = FoodListing.objects.select_for_update().get(id=food_id)
             if food_listing.status != 'Claimed':
-                return Response({"error": "Food listing is not in Claimed status."}, status=status.HTTP_400_BAD_REQUEST)
+                return Response({"error": f"Food listing is currently '{food_listing.status}' and cannot be accepted."}, status=status.HTTP_400_BAD_REQUEST)
+            if food_listing.rider and food_listing.rider != request.user:
+                return Response({"error": "Another rider has already accepted this delivery."}, status=status.HTTP_400_BAD_REQUEST)
             
             food_listing.status = 'Out for Delivery'
+            food_listing.rider = request.user
             food_listing.save()
+            
+            rider_name = getattr(getattr(request.user, 'profile', None), 'full_name', '') or request.user.username
             
             # Get donation to notify donor and receiver
             donation = Donation.objects.filter(food_id=food_listing).first()
@@ -485,20 +539,28 @@ def rider_accept_delivery(request, food_id):
                     recipient=food_listing.user,
                     notification_type='delivery',
                     food_listing=food_listing,
-                    message=f"Rider {request.user.profile.full_name or request.user.email} has accepted delivery for '{food_listing.food_title}'."
+                    message=f"Rider {rider_name} has accepted delivery for '{food_listing.food_title}'."
                 )
                 # Notify receiver
                 Notification.objects.create(
                     recipient=donation.receiver_id,
                     notification_type='delivery',
                     food_listing=food_listing,
-                    message=f"Rider {request.user.profile.full_name or request.user.email} is on the way with your food '{food_listing.food_title}'."
+                    message=f"Rider {rider_name} is on the way with your food '{food_listing.food_title}'."
+                )
+            elif food_listing.claimed_by:
+                Notification.objects.create(
+                    recipient=food_listing.claimed_by,
+                    notification_type='delivery',
+                    food_listing=food_listing,
+                    message=f"Rider {rider_name} is on the way with your food '{food_listing.food_title}'."
                 )
             
             return Response({
                 "message": "Delivery accepted successfully",
                 "status": food_listing.status,
-                "rider_name": request.user.profile.full_name
+                "rider_name": rider_name,
+                "listing": FoodListingSerializer(food_listing, context={'request': request}).data
             }, status=status.HTTP_200_OK)
     except FoodListing.DoesNotExist:
         return Response({"error": "Food listing not found."}, status=status.HTTP_404_NOT_FOUND)
@@ -509,16 +571,16 @@ def rider_accept_delivery(request, food_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def rider_available_deliveries(request):
-    listings = FoodListing.objects.filter(status='Claimed').order_by('-created_at')
-    serializer = FoodListingSerializer(listings, many=True)
+    listings = FoodListing.objects.filter(status='Claimed', rider__isnull=True).order_by('-created_at')
+    serializer = FoodListingSerializer(listings, many=True, context={'request': request})
     return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def rider_my_deliveries(request):
-    listings = FoodListing.objects.filter(status='Out for Delivery').order_by('-created_at')
-    serializer = FoodListingSerializer(listings, many=True)
+    listings = FoodListing.objects.filter(rider=request.user, status__in=['Out for Delivery', 'Claimed']).order_by('-created_at')
+    serializer = FoodListingSerializer(listings, many=True, context={'request': request})
     return Response(serializer.data, status=status.HTTP_200_OK)
 
 

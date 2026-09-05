@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
+import { login as loginApi } from './api';
 import './Login.css';
 
 const Login = () => {
@@ -20,10 +20,18 @@ const Login = () => {
     setLoading(true);
 
     try {
-      const response = await axios.post('http://localhost:8000/api/login/', {
-        email,
-        password,
-      });
+      const response = await loginApi({ email, password });
+
+      if (!response.success) {
+        setError(
+          response.errorMessage ||
+            response.error?.error ||
+            response.error?.detail ||
+            'Invalid credentials or login failed.'
+        );
+        setLoading(false);
+        return;
+      }
 
       const data = response.data;
 
@@ -46,11 +54,8 @@ const Login = () => {
       }
     } catch (err) {
       setLoading(false);
-      if (err.response && err.response.data) {
-        setError(err.response.data.error || 'Invalid credentials or login failed.');
-      } else {
-        setError('A network error occurred. Please check if the Django backend is running at http://localhost:8000.');
-      }
+      console.error('Login failed:', err);
+      setError(err?.message || 'Login failed. Please try again.');
     }
   };
 

@@ -56,11 +56,32 @@ class FoodListing(models.Model):
     expiry_time = models.DateTimeField(blank=True, null=True)
     pickup_location = models.CharField(max_length=500)
     contact_phone = models.CharField(max_length=30)
+    food_image = models.ImageField(upload_to='food_images/', null=True, blank=True)
     food_image_url = models.URLField(max_length=500, blank=True, null=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='Available')
     created_at = models.DateTimeField(auto_now_add=True)
     latitude = models.FloatField(null=True, blank=True)
     longitude = models.FloatField(null=True, blank=True)
+    claimed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='claimed_food_listings'
+    )
+    rider = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='rider_food_listings'
+    )
+
+    @property
+    def image(self):
+        if self.food_image:
+            return self.food_image.url
+        return self.food_image_url
 
     def __str__(self):
         return f"{self.food_title} - {self.food_type} ({self.user})"

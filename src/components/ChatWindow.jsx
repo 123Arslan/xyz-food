@@ -1,15 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import axios from 'axios';
+import { getChatHistory, sendChatMessage } from '../api';
 
-const API_BASE_URL = 'http://localhost:8000/api';
 const POLL_INTERVAL_MS = 3500;
-
-const getAuthToken = () =>
-  localStorage.getItem('authToken') ||
-  sessionStorage.getItem('authToken') ||
-  localStorage.getItem('token') ||
-  sessionStorage.getItem('token') ||
-  '';
 
 const ChatWindow = ({ listingId, receiverId, otherUserName, listingTitle, onClose }) => {
   const [messages, setMessages] = useState([]);
@@ -26,22 +18,23 @@ const ChatWindow = ({ listingId, receiverId, otherUserName, listingTitle, onClos
   };
 
   const fetchHistory = useCallback(async () => {
-    const token = getAuthToken();
-    if (!token || !listingId) return;
+    if (!listingId) return;
 
-    try {
-      const response = await axios.get(`${API_BASE_URL}/chat/history/${listingId}/`, {
-        headers: { Authorization: `Token ${token}` },
-      });
+    const response = await getChatHistory(listingId);
+    if (response.success) {
       setMessages(response.data.messages || []);
       setCurrentUserId(response.data.current_user_id);
       setError('');
-    } catch (err) {
-      const msg = err.response?.data?.error || 'Failed to load chat history.';
-      setError(msg);
-    } finally {
-      setLoading(false);
+    } else {
+      console.error('[Chat] Failed to load history:', response.error);
+      setError(
+        response.errorMessage ||
+          response.error?.error ||
+          response.error?.detail ||
+          'Failed to load chat history.'
+      );
     }
+    setLoading(false);
   }, [listingId]);
 
   useEffect(() => {
@@ -62,33 +55,23 @@ const ChatWindow = ({ listingId, receiverId, otherUserName, listingTitle, onClos
     const text = inputText.trim();
     if (!text || sending || !receiverId) return;
 
-    const token = getAuthToken();
     setSending(true);
     setError('');
 
-    try {
-      const response = await axios.post(
-        `${API_BASE_URL}/chat/send/`,
-        {
-          receiver_id: receiverId,
-          food_listing_id: listingId,
-          message_text: text,
-        },
-        {
-          headers: {
-            Authorization: `Token ${token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
+    const response = await sendChatMessage(receiverId, listingId, text);
+    if (response.success) {
       setMessages((prev) => [...prev, response.data]);
       setInputText('');
-    } catch (err) {
-      const msg = err.response?.data?.error || 'Failed to send message.';
-      setError(msg);
-    } finally {
-      setSending(false);
+    } else {
+      console.error('[Chat] Failed to send message:', response.error);
+      setError(
+        response.errorMessage ||
+          response.error?.error ||
+          response.error?.detail ||
+          'Failed to send message.'
+      );
     }
+    setSending(false);
   };
 
   const formatTime = (timestamp) => {
@@ -104,7 +87,6 @@ const ChatWindow = ({ listingId, receiverId, otherUserName, listingTitle, onClos
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="flex h-[min(600px,90vh)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-100 bg-gradient-to-r from-emerald-600 to-emerald-700 px-5 py-4 text-white">
           <div>
             <h3 className="text-base font-bold">💬 Chat</h3>
@@ -123,7 +105,6 @@ const ChatWindow = ({ listingId, receiverId, otherUserName, listingTitle, onClos
           </button>
         </div>
 
-        {/* Messages */}
         <div
           ref={chatContainerRef}
           className="flex-1 overflow-y-auto bg-slate-50 px-4 py-4"
@@ -177,14 +158,12 @@ const ChatWindow = ({ listingId, receiverId, otherUserName, listingTitle, onClos
           )}
         </div>
 
-        {/* Error */}
         {error && (
           <div className="border-t border-red-100 bg-red-50 px-4 py-2 text-xs text-red-600">
             {error}
           </div>
         )}
 
-        {/* Input */}
         <form
           onSubmit={handleSend}
           className="flex items-center gap-2 border-t border-gray-100 bg-white px-4 py-3"

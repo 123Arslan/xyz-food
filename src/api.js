@@ -1,366 +1,263 @@
-const API_BASE_URL = 'http://localhost:8000/api';
+export const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://127.0.0.1:8000';
+export const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || `${BACKEND_URL}/api`;
 
-const getAuthToken = () => {
-  return (
-    localStorage.getItem('authToken') ||
-    sessionStorage.getItem('authToken') ||
-    localStorage.getItem('token') ||
-    sessionStorage.getItem('token') ||
-    ''
-  );
-};
+export const getAuthToken = () =>
+  localStorage.getItem('authToken') ||
+  sessionStorage.getItem('authToken') ||
+  localStorage.getItem('token') ||
+  sessionStorage.getItem('token') ||
+  '';
 
-const getAuthHeaders = () => {
+export const getAuthHeaders = () => {
   const authToken = getAuthToken();
   return authToken ? { Authorization: `Token ${authToken}` } : {};
 };
 
-export const signup = async (userData) => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/signup/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(userData),
-    });
-    const data = await response.json();
-    if (response.ok) {
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('authToken', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      return { success: true, data };
-    }
-    return { success: false, error: data };
-  } catch (error) {
-    return { success: false, error: 'Network error or server down' };
+export const resolveMediaUrl = (rawPath) => {
+  if (!rawPath || typeof rawPath !== 'string') return '';
+  const trimmed = rawPath.trim();
+  if (!trimmed) return '';
+  if (/^(https?:|data:)/i.test(trimmed)) return trimmed;
+  return `${BACKEND_URL}${trimmed.startsWith('/') ? '' : '/'}${trimmed}`;
+};
+
+const SERVER_UNREACHABLE_MESSAGE =
+  'Unable to reach the server. Confirm Django is running at http://127.0.0.1:8000';
+
+export const extractErrorMessage = (data, response, fallback = 'Request failed') => {
+  if (typeof data === 'string' && data.trim()) return data.trim();
+  if (!data || typeof data !== 'object') {
+    return response?.status ? `${fallback} (HTTP ${response.status})` : fallback;
   }
+  if (typeof data.error === 'string' && data.error) return data.error;
+  if (typeof data.detail === 'string' && data.detail) return data.detail;
+  if (Array.isArray(data.non_field_errors) && data.non_field_errors[0]) {
+    return data.non_field_errors[0];
+  }
+
+  const firstKey = Object.keys(data)[0];
+  if (firstKey) {
+    const value = data[firstKey];
+    if (Array.isArray(value) && value[0]) return `${firstKey}: ${value[0]}`;
+    if (typeof value === 'string' && value) return `${firstKey}: ${value}`;
+  }
+
+  return fallback;
+};
+
+const parseResponseBody = async (response) => {
+  const text = await response.text();
+  if (!text) return null;
+
+  try {
+    return JSON.parse(text);
+  } catch (parseError) {
+    console.error('[API] Non-JSON response:', response.status, text.slice(0, 300));
+    return {
+      detail: text.slice(0, 300),
+      parseError: parseError.message,
+    };
+  }
+};
+
+const handleNetworkError = (error, context) => {
+  const message =
+    error?.message?.includes('Failed to fetch') || error?.name === 'TypeError'
+      ? SERVER_UNREACHABLE_MESSAGE
+      : error?.message || 'Unexpected network error';
+
+  console.error(`[API] ${context} failed:`, error);
+
+  return {
+    success: false,
+    error: { detail: message, networkError: true },
+    errorMessage: message,
+    networkError: true,
+  };
+};
+
+export async function apiRequest(path, options = {}) {
+  const {
+    method = 'GET',
+    body,
+    auth = true,
+    isFormData = false,
+    params,
+    headers: extraHeaders = {},
+  } = options;
+
+  const headers = { Accept: 'application/json', ...extraHeaders };
+
+  if (auth) {
+    Object.assign(headers, getAuthHeaders());
+  }
+
+  if (body !== undefined && body !== null && !isFormData) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  let url = `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
+
+  if (params && typeof params === 'object') {
+    const searchParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        searchParams.append(key, value);
+      }
+    });
+    const query = searchParams.toString();
+    if (query) url += `?${query}`;
+  }
+
+  try {
+    const response = await fetch(url, {
+      method,
+      headers,
+      body:
+        body === undefined || body === null
+          ? undefined
+          : isFormData
+          ? body
+          : JSON.stringify(body),
+    });
+
+    const data = await parseResponseBody(response);
+
+    if (response.ok) {
+      return { success: true, data, status: response.status };
+    }
+
+    const errorMessage = extractErrorMessage(
+      data,
+      response,
+      `Request failed (HTTP ${response.status})`
+    );
+
+    console.error('[API] Error response:', method, url, response.status, data);
+
+    return {
+      success: false,
+      error: data || { detail: errorMessage },
+      errorMessage,
+      status: response.status,
+    };
+  } catch (error) {
+    return handleNetworkError(error, `${method} ${url}`);
+  }
+}
+
+export const signup = async (userData) => {
+  const response = await apiRequest('/signup/', {
+    method: 'POST',
+    body: userData,
+    auth: false,
+  });
+
+  if (response.success) {
+    localStorage.setItem('token', response.data.token);
+    localStorage.setItem('authToken', response.data.token);
+    localStorage.setItem('user', JSON.stringify(response.data.user));
+  }
+
+  return response;
 };
 
 export const login = async (credentials) => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/login/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(credentials),
-    });
-    const data = await response.json();
-    if (response.ok) {
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('authToken', data.token);
-      localStorage.setItem('username', data.username || '');
-      localStorage.setItem('isDonor', String(data.is_donor));
-      localStorage.setItem('isReceiver', String(data.is_receiver));
-      localStorage.setItem('isAdmin', String(data.is_admin));
-      return { success: true, data };
-    }
-    return { success: false, error: data };
-  } catch (error) {
-    return { success: false, error: 'Network error or server down' };
+  const response = await apiRequest('/login/', {
+    method: 'POST',
+    body: credentials,
+    auth: false,
+  });
+
+  if (response.success) {
+    const data = response.data;
+    localStorage.setItem('token', data.token);
+    localStorage.setItem('authToken', data.token);
+    localStorage.setItem('username', data.username || '');
+    localStorage.setItem('isDonor', String(data.is_donor));
+    localStorage.setItem('isReceiver', String(data.is_receiver));
+    localStorage.setItem('isAdmin', String(data.is_admin));
   }
+
+  return response;
 };
 
 export const testDbConnection = async () => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/test-db/`);
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    return { error: 'Failed to connect to backend' };
-  }
+  const response = await apiRequest('/test-db/', { auth: false });
+  return response.success ? response.data : { error: response.errorMessage };
 };
 
-export const getFoodListings = async () => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/food-listings/`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders(),
-      },
-    });
-    const data = await response.json();
-    return response.ok ? { success: true, data } : { success: false, error: data };
-  } catch (error) {
-    return { success: false, error: 'Network error or server down' };
-  }
-};
+export const getFoodListings = async () => apiRequest('/food-listings/');
 
 export const createFoodListing = async (listingData, isFormData = false) => {
-  try {
-    const authToken = getAuthToken();
-    const headers = {};
-    
-    if (authToken) {
-      headers.Authorization = `Token ${authToken}`;
-      console.log('[API] Auth token found, length:', authToken.length);
-    } else {
-      console.warn('[API] No auth token found in storage');
-    }
+  const isPayloadFormData =
+    isFormData || (typeof FormData !== 'undefined' && listingData instanceof FormData);
 
-    // Only set Content-Type for JSON, not FormData (browser sets it automatically)
-    if (!isFormData) {
-      headers['Content-Type'] = 'application/json';
-    }
-
-    console.log('[API] Sending payload:', isFormData ? 'FormData' : listingData);
-    
-    const response = await fetch(`${API_BASE_URL}/food-listings/`, {
-      method: 'POST',
-      headers,
-      body: isFormData ? listingData : JSON.stringify(listingData),
-    });
-    
-    const data = await response.json();
-    console.log('[API] Response status:', response.status, 'Body:', data);
-    
-    return response.ok ? { success: true, data } : { success: false, error: data };
-  } catch (error) {
-    console.error('[API] Network error:', error);
-    return { success: false, error: 'Network error or server down' };
+  if (!getAuthToken()) {
+    console.warn('[API] No auth token found in storage');
   }
+
+  return apiRequest('/food-listings/', {
+    method: 'POST',
+    body: listingData,
+    isFormData: isPayloadFormData,
+  });
 };
 
 export const updateFoodListing = async (listingId, listingData, isFormData = false) => {
-  try {
-    const authToken = getAuthToken();
-    const headers = {};
+  const isPayloadFormData =
+    isFormData || (typeof FormData !== 'undefined' && listingData instanceof FormData);
 
-    if (authToken) {
-      headers.Authorization = `Token ${authToken}`;
-    }
-
-    // Only set Content-Type for JSON; let the browser set it for FormData
-    if (!isFormData) {
-      headers['Content-Type'] = 'application/json';
-    }
-
-    const response = await fetch(`${API_BASE_URL}/food-listings/${listingId}/`, {
-      method: 'PATCH',
-      headers,
-      body: isFormData ? listingData : JSON.stringify(listingData),
-    });
-    const data = await response.json();
-    console.log('[API] Update response:', response.status, data);
-    return response.ok ? { success: true, data } : { success: false, error: data };
-  } catch (error) {
-    console.error('[API] Update error:', error);
-    return { success: false, error: 'Network error or server down' };
-  }
+  return apiRequest(`/food-listings/${listingId}/`, {
+    method: 'PATCH',
+    body: listingData,
+    isFormData: isPayloadFormData,
+  });
 };
 
-export const deleteFoodListing = async (listingId) => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/food-listings/${listingId}/`, {
-      method: 'DELETE',
-      headers: {
-        ...getAuthHeaders(),
-      },
-    });
-    return response.ok ? { success: true } : { success: false, error: 'Failed to delete listing' };
-  } catch (error) {
-    return { success: false, error: 'Network error or server down' };
-  }
-};
+export const deleteFoodListing = async (listingId) =>
+  apiRequest(`/food-listings/${listingId}/`, { method: 'DELETE' });
 
-export const claimFood = async (foodId) => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/claim-food/${foodId}/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders(),
-      },
-    });
-    const data = await response.json();
-    return response.ok ? { success: true, data } : { success: false, error: data };
-  } catch (error) {
-    return { success: false, error: 'Network error or server down' };
-  }
-};
+export const getAvailableFood = async (params = {}) =>
+  apiRequest('/get-food/', { auth: false, params });
 
-export const completeTransaction = async (foodId) => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/complete-transaction/${foodId}/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders(),
-      },
-    });
-    const data = await response.json();
-    return response.ok ? { success: true, data } : { success: false, error: data };
-  } catch (error) {
-    return { success: false, error: 'Network error or server down' };
-  }
-};
+export const claimFood = async (foodId) =>
+  apiRequest(`/claim-food/${foodId}/`, { method: 'POST', body: {} });
 
-export const getMyClaims = async () => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/my-claims/`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders(),
-      },
-    });
-    const data = await response.json();
-    return response.ok ? { success: true, data } : { success: false, error: data };
-  } catch (error) {
-    return { success: false, error: 'Network error or server down' };
-  }
-};
+export const completeTransaction = async (foodId) =>
+  apiRequest(`/complete-transaction/${foodId}/`, { method: 'POST', body: {} });
 
-export const sendChatMessage = async (receiverId, foodListingId, messageText) => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/chat/send/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders(),
-      },
-      body: JSON.stringify({
-        receiver_id: receiverId,
-        food_listing_id: foodListingId,
-        message_text: messageText,
-      }),
-    });
-    const data = await response.json();
-    return response.ok ? { success: true, data } : { success: false, error: data };
-  } catch (error) {
-    return { success: false, error: 'Network error or server down' };
-  }
-};
+export const getMyClaims = async () => apiRequest('/my-claims/');
 
-export const getChatHistory = async (listingId) => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/chat/history/${listingId}/`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders(),
-      },
-    });
-    const data = await response.json();
-    return response.ok ? { success: true, data } : { success: false, error: data };
-  } catch (error) {
-    return { success: false, error: 'Network error or server down' };
-  }
-};
+export const postFeedback = async (payload) =>
+  apiRequest('/feedback/', { method: 'POST', body: payload });
 
-// Admin API endpoints
-export const getAdminStats = async () => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/admin/stats/`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders(),
-      },
-    });
-    const data = await response.json();
-    return response.ok ? { success: true, data } : { success: false, error: data };
-  } catch (error) {
-    return { success: false, error: 'Network error or server down' };
-  }
-};
+export const sendChatMessage = async (receiverId, foodListingId, messageText) =>
+  apiRequest('/chat/send/', {
+    method: 'POST',
+    body: {
+      receiver_id: receiverId,
+      food_listing_id: foodListingId,
+      message_text: messageText,
+    },
+  });
 
-export const getAdminListings = async () => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/admin/listings/`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders(),
-      },
-    });
-    const data = await response.json();
-    return response.ok ? { success: true, data } : { success: false, error: data };
-  } catch (error) {
-    return { success: false, error: 'Network error or server down' };
-  }
-};
+export const getChatHistory = async (listingId) =>
+  apiRequest(`/chat/history/${listingId}/`);
 
-export const deleteAdminListing = async (listingId) => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/admin/listings/${listingId}/`, {
-      method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders(),
-      },
-    });
-    const data = await response.json();
-    return response.ok ? { success: true, data } : { success: false, error: data };
-  } catch (error) {
-    return { success: false, error: 'Network error or server down' };
-  }
-};
+export const getAdminStats = async () => apiRequest('/admin/stats/');
 
-export const getAdminUsers = async () => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/admin/users/`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders(),
-      },
-    });
-    const data = await response.json();
-    return response.ok ? { success: true, data } : { success: false, error: data };
-  } catch (error) {
-    return { success: false, error: 'Network error or server down' };
-  }
-};
+export const getAdminListings = async () => apiRequest('/admin/listings/');
 
-export const toggleBanUser = async (userId) => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/admin/users/${userId}/ban/`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders(),
-      },
-    });
-    const data = await response.json();
-    return response.ok ? { success: true, data } : { success: false, error: data };
-  } catch (error) {
-    return { success: false, error: 'Network error or server down' };
-  }
-};
+export const deleteAdminListing = async (listingId) =>
+  apiRequest(`/admin/listings/${listingId}/`, { method: 'DELETE' });
 
-export const getUserProfile = async () => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/profile/`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders(),
-      },
-    });
-    const data = await response.json();
-    return response.ok ? { success: true, data } : { success: false, error: data };
-  } catch (error) {
-    return { success: false, error: 'Network error or server down' };
-  }
-};
+export const getAdminUsers = async () => apiRequest('/admin/users/');
 
-export const updateUserProfile = async (profileData) => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/profile/`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-        ...getAuthHeaders(),
-      },
-      body: JSON.stringify(profileData),
-    });
-    const data = await response.json();
-    return response.ok ? { success: true, data } : { success: false, error: data };
-  } catch (error) {
-    return { success: false, error: 'Network error or server down' };
-  }
-};
+export const toggleBanUser = async (userId) =>
+  apiRequest(`/admin/users/${userId}/ban/`, { method: 'POST', body: {} });
 
+export const getUserProfile = async () => apiRequest('/profile/');
+
+export const updateUserProfile = async (profileData) =>
+  apiRequest('/profile/', { method: 'PUT', body: profileData });

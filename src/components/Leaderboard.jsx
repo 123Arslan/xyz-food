@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import axios from 'axios';
+import { API_BASE_URL, getAuthHeaders } from '../api';
 import { useAuth } from '../AuthContext';
 import './Leaderboard.css';
 
@@ -18,11 +18,17 @@ const Leaderboard = () => {
   useEffect(() => {
     const fetchLeaderboard = async () => {
       try {
-        const response = await axios.get('http://localhost:8000/api/leaderboard/', {
-          headers: token ? { Authorization: `Token ${token}` } : {}
+        const response = await fetch(`${API_BASE_URL}/leaderboard/`, {
+          headers: {
+            Accept: 'application/json',
+            ...getAuthHeaders(),
+          },
         });
-        
-        const leaderboardData = response.data;
+        const leaderboardData = await response.json();
+        if (!response.ok) {
+          console.error('[Leaderboard] Failed to load:', response.status, leaderboardData);
+          return;
+        }
         setTopDonors(leaderboardData);
         
         // Find current user in leaderboard

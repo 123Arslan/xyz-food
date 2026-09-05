@@ -1,10 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer
 } from 'recharts';
 import './AdminDashboard.css';
-import { getAdminStats, getAdminListings, deleteAdminListing, getAdminUsers, toggleBanUser } from './api';
+import { getAdminStats, getAdminListings, deleteAdminListing, getAdminUsers, toggleBanUser, apiRequest } from './api';
 
 const AdminDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
@@ -92,28 +91,30 @@ const AdminDashboard = () => {
 
   const handleApproveUser = async (userId) => {
     try {
-      const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
-      const response = await axios.post(`http://localhost:8000/api/admin/users/${userId}/approve/`, {}, {
-        headers: { Authorization: `Token ${token}` }
-      });
+      const response = await apiRequest(`/admin/users/${userId}/approve/`, { method: 'POST', body: {} });
+      if (!response.success) {
+        alert(response.errorMessage || 'Failed to approve user');
+        return;
+      }
       alert(response.data.message);
       setUsers(users.map(u => u.id === userId ? { ...u, account_status: 'Active' } : u));
     } catch (err) {
-      alert('Failed to approve user');
+      alert(err?.message || 'Failed to approve user');
       console.error(err);
     }
   };
 
   const handleRejectUser = async (userId) => {
     try {
-      const token = localStorage.getItem('authToken') || sessionStorage.getItem('authToken');
-      const response = await axios.post(`http://localhost:8000/api/admin/users/${userId}/reject/`, {}, {
-        headers: { Authorization: `Token ${token}` }
-      });
+      const response = await apiRequest(`/admin/users/${userId}/reject/`, { method: 'POST', body: {} });
+      if (!response.success) {
+        alert(response.errorMessage || 'Failed to reject user');
+        return;
+      }
       alert(response.data.message);
       setUsers(users.map(u => u.id === userId ? { ...u, account_status: 'Rejected' } : u));
     } catch (err) {
-      alert('Failed to reject user');
+      alert(err?.message || 'Failed to reject user');
       console.error(err);
     }
   };

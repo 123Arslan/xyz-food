@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { signup, BACKEND_URL } from './api';
 import './SignUp.css';
 
 const SignUp = () => {
@@ -25,7 +25,7 @@ const SignUp = () => {
   };
 
   const handleGoogleSignUp = () => {
-    window.location.href = "http://localhost:8000/accounts/google/login/";
+    window.location.href = `${BACKEND_URL}/accounts/google/login/`;
   };
 
   const handleSignUp = async (e) => {
@@ -46,34 +46,35 @@ const SignUp = () => {
     setLoading(true);
 
     try {
-      await axios.post('http://localhost:8000/api/signup/', {
+      const response = await signup({
         fullName,
         email,
         password,
         accountType,
       });
 
+      if (!response.success) {
+        const data = response.error;
+        let errorMsg = response.errorMessage || 'Registration failed.';
+        if (data && typeof data === 'object') {
+          errorMsg =
+            response.errorMessage ||
+            Object.entries(data)
+              .map(([key, val]) => `${key}: ${Array.isArray(val) ? val.join(' ') : val}`)
+              .join(' | ');
+        }
+        setError(errorMsg);
+        setLoading(false);
+        return;
+      }
+
       alert("Sign up successful! Please login.");
       setLoading(false);
-
-      // Navigate to login after successful signup
       navigate('/login');
     } catch (err) {
       setLoading(false);
-      if (err.response && err.response.data) {
-        // Parse Django serializer errors
-        let errorMsg = 'Registration failed.';
-        if (typeof err.response.data === 'object') {
-          errorMsg = Object.entries(err.response.data)
-            .map(([key, val]) => `${key}: ${Array.isArray(val) ? val.join(' ') : val}`)
-            .join(' | ');
-        } else {
-          errorMsg = String(err.response.data);
-        }
-        setError(errorMsg);
-      } else {
-        setError('A network error occurred. Please check if the Django backend is running at http://localhost:8000.');
-      }
+      console.error('Signup failed:', err);
+      setError(err?.message || 'Registration failed. Please try again.');
     }
   };
 

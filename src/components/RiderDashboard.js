@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import axios from 'axios';
 import { toast } from 'react-toastify';
 import { useAuth } from '../AuthContext';
+import { apiRequest } from '../api';
 import './RiderDashboard.css';
 
 // ─── Constants ──────────────────────────────────────────────
@@ -136,27 +136,22 @@ const RiderDashboard = () => {
   const fetchAvailableDeliveries = async () => {
     setIsLoading(true);
     setErrorMsg('');
-    try {
-      const response = await axios.get('http://localhost:8000/api/rider/available-deliveries/', {
-        headers: token ? { Authorization: `Token ${token}` } : {}
-      });
+    const response = await apiRequest('/rider/available-deliveries/');
+    if (response.success) {
       setDeliveries(response.data);
-    } catch (err) {
-      console.error('Error fetching deliveries:', err);
-      setErrorMsg('Failed to load available deliveries. Please try again later.');
-    } finally {
-      setIsLoading(false);
+    } else {
+      console.error('Error fetching deliveries:', response.error);
+      setErrorMsg(response.errorMessage || 'Failed to load available deliveries. Please try again later.');
     }
+    setIsLoading(false);
   };
 
   const fetchMyDeliveries = async () => {
-    try {
-      const response = await axios.get('http://localhost:8000/api/rider/my-deliveries/', {
-        headers: token ? { Authorization: `Token ${token}` } : {}
-      });
+    const response = await apiRequest('/rider/my-deliveries/');
+    if (response.success) {
       setMyDeliveries(response.data);
-    } catch (err) {
-      console.error('Error fetching my deliveries:', err);
+    } else {
+      console.error('Error fetching my deliveries:', response.error);
     }
   };
 
